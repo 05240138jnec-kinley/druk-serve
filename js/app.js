@@ -22,6 +22,7 @@ const DS = {
     if (!this.get("bookings"))      this.set("bookings", DEFAULT_BOOKINGS);
     if (!this.get("feedback"))      this.set("feedback", DEFAULT_FEEDBACK);
     if (!this.get("notifications")) this.set("notifications", DEFAULT_NOTIFICATIONS);
+    if (!this.get("categories"))    this.set("categories", SERVICES);
   },
   // Developer helper: wipes everything and starts again (type DS.reset() in the browser console).
   reset() {
@@ -42,7 +43,9 @@ const DS = {
   // Call at the top of protected pages. Sends visitors to the login page if the role is wrong.
   requireRole(roles) {
     const u = this.user();
-    if (!u || !roles.includes(u.role)) {
+    const record = u && this.get("users", []).find(x => x.id === u.id);
+    if (!u || !record || record.suspended || !roles.includes(u.role)) {
+      if (record && record.suspended) localStorage.removeItem("ds_session");   // suspended by the admin
       location.href = this.base + "login.html";
       return false;
     }
@@ -75,7 +78,9 @@ const DS = {
 
   // Availability helpers (a provider can set working days and hours on "My Services")
   DAY_NAMES: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-  bookable(p) { return p.verified && p.available !== false; },   // can customers book this provider?
+  bookable(p) { return p.verified && p.available !== false && !p.suspended; },   // can customers book this provider?
+  // BACKEND: later GET /api/categories (managed by the admin)
+  services() { return this.get("categories", SERVICES); },
   schedule(p) {
     return { available: p.available !== false, days: p.days || [1, 2, 3, 4, 5, 6], from: p.from || "08:00", to: p.to || "17:00" };
   },

@@ -71,6 +71,10 @@ if (loginForm) {
       showAlert("loginAlert", "Incorrect password. Please try again.", "danger");
       return;
     }
+    if (user.suspended) {
+      showAlert("loginAlert", "This account has been suspended. Please contact the admin.", "danger");
+      return;
+    }
     if (user.role !== role) {
       showAlert("loginAlert", "This email is registered as a " + user.role + ". Please select \"" +
         user.role.charAt(0).toUpperCase() + user.role.slice(1) + "\" above.", "danger");
@@ -88,7 +92,7 @@ if (regForm) {
 
   // Fill the dropdowns
   $("location").innerHTML = LOCATIONS.map(l => `<option>${l}</option>`).join("");
-  $("category").innerHTML = SERVICES.map(s => `<option>${s.name}</option>`).join("");
+  $("category").innerHTML = DS.services().map(s => `<option>${s.name}</option>`).join("");
 
   // Customer / Provider switch
   function applyRole() {

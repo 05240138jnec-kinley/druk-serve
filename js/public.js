@@ -1,7 +1,7 @@
 /* ===== Landing page (index.html) ===== */
 
 // Service category cards
-document.getElementById("serviceGrid").innerHTML = SERVICES.map(s => `
+document.getElementById("serviceGrid").innerHTML = DS.services().map(s => `
   <div class="col-6 col-md-4 col-lg-3">
     <a class="service-card" href="${DS.base}customer/providers.html?service=${encodeURIComponent(s.name)}">
       <span class="icon-circle"><i class="bi ${s.icon}"></i></span>
@@ -19,7 +19,7 @@ document.getElementById("topProviders").innerHTML = bestProviders.map(p => DS.pr
 
 // Search box: fill the service dropdown
 const select = document.getElementById("searchService");
-SERVICES.forEach(s => select.insertAdjacentHTML("beforeend", `<option value="${s.name}">${s.name}</option>`));
+DS.services().forEach(s => select.insertAdjacentHTML("beforeend", `<option value="${s.name}">${s.name}</option>`));
 
 // Search button: go to the providers page with the search words
 // (the providers page is built in Step 2)

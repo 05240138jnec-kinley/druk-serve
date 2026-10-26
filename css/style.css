@@ -155,3 +155,15 @@ body{font-family:'Poppins',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;b
 .stat-card{display:flex;align-items:center;gap:1rem}
 .reply-box{background:var(--ds-bg);border-left:3px solid var(--ds-primary);border-radius:8px;padding:.7rem 1rem;margin-top:.6rem}
 .day-check{min-width:72px}
+
+/* ===== Step 6 additions: admin ===== */
+.bar-row{display:grid;grid-template-columns:130px 1fr 70px;gap:.75rem;align-items:center;margin-bottom:.7rem;font-size:.9rem}
+.bar-track{background:#e9eef2;border-radius:6px;height:12px;overflow:hidden}
+.bar-fill{height:100%;background:var(--ds-primary);border-radius:6px;min-width:2px}
+.bar-fill.accent{background:var(--ds-accent)}
+.bar-fill.st-Pending{background:#F59E0B}.bar-fill.st-Confirmed{background:#3B82F6}.bar-fill.st-Completed{background:#16A34A}.bar-fill.st-Cancelled{background:#DC2626}
+.table th{font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;color:var(--ds-muted);font-weight:600}
+.cat-card{background:#fff;border:1px solid var(--ds-border);border-radius:16px;padding:1.2rem;height:100%}
+.nav-pills .nav-link{color:var(--ds-ink);font-weight:500}
+.nav-pills .nav-link.active{background:var(--ds-primary)}
+@media (max-width:575px){.bar-row{grid-template-columns:90px 1fr 60px}}

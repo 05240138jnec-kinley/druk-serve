@@ -198,7 +198,7 @@
     const sch = DS.schedule(me0);
     verifyNotice();
 
-    SERVICES.forEach(s => $("sCategory").insertAdjacentHTML("beforeend", `<option>${s.name}</option>`));
+    DS.services().forEach(s => $("sCategory").insertAdjacentHTML("beforeend", `<option>${s.name}</option>`));
     for (let h = 6; h <= 21; h++) {
       const v = String(h).padStart(2, "0") + ":00";
       const opt = `<option value="${v}">${DS.niceTime(v)}</option>`;

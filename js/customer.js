@@ -19,7 +19,7 @@
     $("welcome").textContent = "Welcome, " + user.name.split(" ")[0];
 
     // Service tiles
-    $("serviceGrid").innerHTML = SERVICES.map(s => `
+    $("serviceGrid").innerHTML = DS.services().map(s => `
       <div class="col-6 col-md-4 col-lg-3">
         <a class="service-card" href="providers.html?service=${encodeURIComponent(s.name)}">
           <span class="icon-circle"><i class="bi ${s.icon}"></i></span>
@@ -28,7 +28,7 @@
       </div>`).join("");
 
     // Search form
-    SERVICES.forEach(s => $("searchService").insertAdjacentHTML("beforeend", `<option>${s.name}</option>`));
+    DS.services().forEach(s => $("searchService").insertAdjacentHTML("beforeend", `<option>${s.name}</option>`));
     $("searchForm").addEventListener("submit", e => {
       e.preventDefault();
       const p = new URLSearchParams();
@@ -69,7 +69,7 @@
   /* ================= PROVIDERS LIST PAGE ================= */
   if ($("providerList")) {
     // Fill dropdowns
-    SERVICES.forEach(s => $("fService").insertAdjacentHTML("beforeend", `<option>${s.name}</option>`));
+    DS.services().forEach(s => $("fService").insertAdjacentHTML("beforeend", `<option>${s.name}</option>`));
     LOCATIONS.forEach(l => $("fLocation").insertAdjacentHTML("beforeend", `<option>${l}</option>`));
 
     // Start with any search words sent from the home page
