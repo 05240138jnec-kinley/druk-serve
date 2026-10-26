@@ -22,7 +22,7 @@
   /* ================= BOOKING PAGE ================= */
   if ($("bookingWrap")) {
     const p = getProviders().find(x => x.id === Number(params.get("provider")));
-    if (!p || !p.verified) {
+    if (!p || !DS.bookable(p)) {
       messageCard("bookingWrap", "bi-person-x", "This provider is not available for booking.");
       return;
     }
@@ -33,7 +33,9 @@
     $("custPhone").value = me.phone || "";
     $("address").value = me.address || "";
     $("date").min = DS.todayISO();
-    for (let h = 8; h <= 17; h++) {
+    const sch = DS.schedule(p);           // the provider's working days and hours
+    $("workHint").textContent = "Works " + DS.daysText(sch.days) + ", " + DS.niceTime(sch.from) + " to " + DS.niceTime(sch.to) + ".";
+    for (let h = parseInt(sch.from); h < parseInt(sch.to); h++) {
       const v = String(h).padStart(2, "0") + ":00";
       $("time").insertAdjacentHTML("beforeend", `<option value="${v}">${DS.niceTime(v)}</option>`);
     }
@@ -64,7 +66,10 @@
         if (!valid) ok = false;
       }
       check("address", $("address").value.trim().length >= 5);
-      check("date", $("date").value !== "" && $("date").value >= DS.todayISO());
+      const dateOk = $("date").value !== "" && $("date").value >= DS.todayISO();
+      const dayOk = !dateOk || sch.days.includes(DS.weekday($("date").value));
+      $("dateMsg").textContent = !dateOk ? "Choose today or a future date." : "This provider does not work on that day.";
+      check("date", dateOk && dayOk);
       check("time", $("time").value !== "");
       if (!ok) return;
 

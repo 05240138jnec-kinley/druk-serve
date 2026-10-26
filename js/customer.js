@@ -11,8 +11,8 @@
   const params = new URLSearchParams(location.search);
 
   // BACKEND: later this will be GET /api/providers?verified=true
-  // Customers only see providers the admin has verified.
-  const verifiedProviders = () => DS.get("providers", []).filter(p => p.verified);
+  // Customers only see providers the admin has verified who are accepting bookings.
+  const verifiedProviders = () => DS.get("providers", []).filter(p => DS.bookable(p));
 
   /* ================= HOME PAGE ================= */
   if ($("welcome")) {
@@ -140,12 +140,16 @@
             <strong>${DS.esc(c ? c.name : "Customer")}</strong><small class="text-muted">${r.date}</small>
           </div>
           <div>${DS.stars(r.rating)}</div>
-          <p class="mb-0 mt-1">${DS.esc(r.comment || "")}</p></div>`;
+          <p class="mb-0 mt-1">${DS.esc(r.comment || "")}</p>
+          ${r.reply ? `<div class="reply-box"><small class="text-muted">Reply from ${DS.esc(p.name)}</small><div>${DS.esc(r.reply)}</div></div>` : ""}</div>`;
       }).join("") : `<p class="text-muted mb-0">No reviews yet.</p>`;
 
-      const bookBtn = p.verified
-        ? `<a href="booking.html?provider=${p.id}" class="btn btn-accent w-100 py-2"><i class="bi bi-calendar-plus me-1"></i>Book Now</a>`
-        : `<button class="btn btn-secondary w-100 py-2" disabled>Not yet verified</button>`;
+      const sch = DS.schedule(p);
+      const bookBtn = !p.verified
+        ? `<button class="btn btn-secondary w-100 py-2" disabled>Not yet verified</button>`
+        : !sch.available
+          ? `<button class="btn btn-secondary w-100 py-2" disabled>Currently unavailable</button>`
+          : `<a href="booking.html?provider=${p.id}" class="btn btn-accent w-100 py-2"><i class="bi bi-calendar-plus me-1"></i>Book Now</a>`;
 
       $("profileBox").innerHTML = `<div class="row g-4">
         <div class="col-lg-8">
@@ -163,7 +167,8 @@
 
           <div class="card-ds mb-4">
             <h2 class="h5 fw-bold mb-3">About</h2>
-            <p>${DS.esc(p.bio || "No description added yet.")}</p>
+            <p class="mb-2">${DS.esc(p.bio || "No description added yet.")}</p>
+            <p class="small text-muted mb-3"><i class="bi bi-clock me-1"></i>${sch.available ? "Works " + DS.daysText(sch.days) + ", " + DS.niceTime(sch.from) + " to " + DS.niceTime(sch.to) : "Not accepting new bookings right now"}</p>
             <div class="row g-3">
               <div class="col-6 col-md-3"><div class="info-tile"><small>Experience</small><strong>${p.experience} years</strong></div></div>
               <div class="col-6 col-md-3"><div class="info-tile"><small>Price</small><strong>Nu. ${p.rate}/hr</strong></div></div>

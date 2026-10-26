@@ -12,7 +12,7 @@ document.getElementById("serviceGrid").innerHTML = SERVICES.map(s => `
 
 // Top rated providers (verified only, best 4)
 const bestProviders = DS.get("providers", [])
-  .filter(p => p.verified)
+  .filter(p => DS.bookable(p))
   .sort((a, b) => b.rating - a.rating)
   .slice(0, 4);
 document.getElementById("topProviders").innerHTML = bestProviders.map(p => DS.providerCard(p)).join("");

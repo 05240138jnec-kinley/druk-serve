@@ -73,6 +73,20 @@ const DS = {
   },
   money(n) { return "Nu. " + Number(n).toLocaleString(); },
 
+  // Availability helpers (a provider can set working days and hours on "My Services")
+  DAY_NAMES: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+  bookable(p) { return p.verified && p.available !== false; },   // can customers book this provider?
+  schedule(p) {
+    return { available: p.available !== false, days: p.days || [1, 2, 3, 4, 5, 6], from: p.from || "08:00", to: p.to || "17:00" };
+  },
+  weekday(iso) {                       // "2026-11-02" -> 1 (Monday)
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).getDay();
+  },
+  daysText(days) {                     // [1,2,3,6] -> "Mon, Tue, Wed, Sat"
+    return [1, 2, 3, 4, 5, 6, 0].filter(d => days.includes(d)).map(d => this.DAY_NAMES[d]).join(", ");
+  },
+
   // Next free id for a list (used when saving a new booking, etc.)
   nextId(list) { return list.reduce((m, x) => Math.max(m, x.id), 0) + 1; },
 

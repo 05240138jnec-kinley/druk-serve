@@ -150,3 +150,8 @@ body{font-family:'Poppins',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;b
 .notif.unread{background:var(--ds-primary-soft);border-color:#bfe0de}
 .notif .icon-circle{width:44px;height:44px;font-size:1.2rem;flex-shrink:0}
 .notif .dot{width:9px;height:9px;border-radius:50%;background:var(--ds-danger);flex-shrink:0;margin-top:.45rem}
+
+/* ===== Step 5 additions: provider pages ===== */
+.stat-card{display:flex;align-items:center;gap:1rem}
+.reply-box{background:var(--ds-bg);border-left:3px solid var(--ds-primary);border-radius:8px;padding:.7rem 1rem;margin-top:.6rem}
+.day-check{min-width:72px}
