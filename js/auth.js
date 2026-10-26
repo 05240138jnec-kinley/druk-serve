@@ -58,12 +58,22 @@ if (loginForm) {
     if (!emailEl.checkValidity() || !pwEl.value) return;
 
     // BACKEND: replace this block with a call to POST /api/login
-    const user = DS.get("users", []).find(u =>
-      u.email.toLowerCase() === emailEl.value.trim().toLowerCase() &&
-      u.password === pwEl.value && u.role === role);
+    // (a real server should show ONE general message such as "Wrong email or password";
+    //  the specific messages below are only to help you while testing)
+    const email = emailEl.value.trim().toLowerCase();
+    const user = DS.get("users", []).find(u => u.email.toLowerCase() === email);
 
     if (!user) {
-      showAlert("loginAlert", "Wrong email, password or role. Please try again.", "danger");
+      showAlert("loginAlert", "No account found with this email. Please register first, or use a test account below.", "danger");
+      return;
+    }
+    if (user.password !== pwEl.value) {
+      showAlert("loginAlert", "Incorrect password. Please try again.", "danger");
+      return;
+    }
+    if (user.role !== role) {
+      showAlert("loginAlert", "This email is registered as a " + user.role + ". Please select \"" +
+        user.role.charAt(0).toUpperCase() + user.role.slice(1) + "\" above.", "danger");
       return;
     }
     DS.login(user);

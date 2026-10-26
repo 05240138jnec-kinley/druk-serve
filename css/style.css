@@ -117,3 +117,36 @@ body{font-family:'Poppins',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;b
 .empty-state i{font-size:3rem;display:block;margin-bottom:.5rem}
 .review{border-bottom:1px solid var(--ds-border);padding:1rem 0}
 .review:last-child{border-bottom:0}
+
+/* ===== Step 3 additions: booking, payment, my bookings ===== */
+.timeline{display:flex;margin:1rem 0 .25rem}
+.tl-step{flex:1;text-align:center;font-size:.78rem;color:var(--ds-muted);position:relative}
+.tl-step span{width:28px;height:28px;border-radius:50%;background:#d5dde3;color:#fff;display:grid;place-items:center;margin:0 auto .3rem;position:relative;z-index:1}
+.tl-step::before{content:"";position:absolute;top:13px;left:-50%;width:100%;height:3px;background:#d5dde3}
+.tl-step:first-child::before{display:none}
+.tl-step.done span,.tl-step.active span{background:var(--ds-primary)}
+.tl-step.done::before,.tl-step.active::before{background:var(--ds-primary)}
+.tl-step.active span{box-shadow:0 0 0 4px rgba(11,110,110,.2)}
+.tl-step.done,.tl-step.active{color:var(--ds-ink);font-weight:500}
+.tl-step.cancelled{color:var(--ds-danger);font-weight:500}
+.tl-step.cancelled span{background:var(--ds-danger)}
+.tl-step.cancelled::before{background:var(--ds-danger)}
+.option-card{display:flex;flex-direction:column;align-items:center;gap:.3rem;border:2px solid var(--ds-border);border-radius:14px;padding:1.2rem;text-align:center;cursor:pointer;background:#fff;height:100%;transition:.2s}
+.option-card i{font-size:2rem;color:var(--ds-primary)}
+.option-card small{color:var(--ds-muted)}
+.btn-check:checked + .option-card{border-color:var(--ds-primary);background:var(--ds-primary-soft)}
+.btn-check:focus-visible + .option-card{outline:3px solid rgba(11,110,110,.35)}
+.qr-box{border:2px dashed #cfd8df;border-radius:14px;padding:1rem;text-align:center;color:var(--ds-muted)}
+.qr-box i{font-size:5rem;color:var(--ds-ink)}
+.success-icon{font-size:4rem;color:var(--ds-success)}
+
+/* ===== Step 4 additions: feedback, notifications, profile ===== */
+.star-btn{background:none;border:0;font-size:2.4rem;color:#cfd8df;padding:0 .2rem;line-height:1;transition:.15s;cursor:pointer}
+.star-btn.on{color:var(--ds-accent)}
+.star-btn:hover{transform:scale(1.12)}
+.star-btn:focus-visible{outline:3px solid rgba(11,110,110,.35);border-radius:8px}
+.notif{display:flex;gap:1rem;align-items:flex-start;padding:1rem;border:1px solid var(--ds-border);border-radius:14px;background:#fff;margin-bottom:.75rem;cursor:pointer;transition:.15s}
+.notif:hover{box-shadow:0 6px 16px rgba(18,38,58,.08)}
+.notif.unread{background:var(--ds-primary-soft);border-color:#bfe0de}
+.notif .icon-circle{width:44px;height:44px;font-size:1.2rem;flex-shrink:0}
+.notif .dot{width:9px;height:9px;border-radius:50%;background:var(--ds-danger);flex-shrink:0;margin-top:.45rem}

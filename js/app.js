@@ -73,6 +73,31 @@ const DS = {
   },
   money(n) { return "Nu. " + Number(n).toLocaleString(); },
 
+  // Next free id for a list (used when saving a new booking, etc.)
+  nextId(list) { return list.reduce((m, x) => Math.max(m, x.id), 0) + 1; },
+
+  // Adds a notification. role = "customer" or "provider".
+  // BACKEND: later the server creates these and Firebase delivers them in real time.
+  notify(role, icon, title, text) {
+    const list = this.get("notifications", []);
+    list.unshift({ id: this.nextId(list), role: role, icon: icon, title: title, text: text, time: "Just now", read: false });
+    this.set("notifications", list);
+  },
+
+  // Date helpers: "2026-11-02" -> "2 Nov 2026", "14:00" -> "2:00 PM"
+  niceDate(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  },
+  niceTime(t) {
+    const [h, m] = t.split(":").map(Number);
+    return (h % 12 || 12) + ":" + String(m).padStart(2, "0") + " " + (h >= 12 ? "PM" : "AM");
+  },
+  todayISO() {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  },
+
   // A small pop-up message at the bottom right of the screen.
   toast(message, type = "success") {
     let box = document.getElementById("toastBox");

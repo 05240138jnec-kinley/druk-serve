@@ -36,7 +36,7 @@ const DEFAULT_USERS = [
 
 /* Table: Booking (status: Pending / Confirmed / Completed / Cancelled) */
 const DEFAULT_BOOKINGS = [
-  { id: 1, customerId: 2, providerId: 1, service: "Electrical", date: "2026-11-02", time: "10:00", address: "Norzin Lam, Thimphu", notes: "Light switch not working in the living room.", status: "Confirmed", amount: 800,  payMethod: "Cash", paid: false },
+  { id: 1, customerId: 2, providerId: 1, service: "Electrical", date: "2026-11-02", time: "10:00", address: "Norzin Lam, Thimphu", notes: "Light switch not working in the living room.", status: "Completed", amount: 800,  payMethod: "Cash", paid: false },
   { id: 2, customerId: 2, providerId: 3, service: "Cleaning",   date: "2026-11-05", time: "14:00", address: "Norzin Lam, Thimphu", notes: "Full house cleaning.",                       status: "Pending",   amount: 1000, payMethod: "",     paid: false },
   { id: 3, customerId: 2, providerId: 2, service: "Plumbing",   date: "2026-10-12", time: "09:00", address: "Norzin Lam, Thimphu", notes: "Kitchen tap leaking.",                       status: "Completed", amount: 700,  payMethod: "mPay", paid: true  },
   { id: 4, customerId: 2, providerId: 5, service: "Painting",   date: "2026-09-20", time: "11:00", address: "Norzin Lam, Thimphu", notes: "Bedroom wall painting.",                     status: "Cancelled", amount: 1500, payMethod: "",     paid: false }

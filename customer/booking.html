@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Book a Service - Druk Serve</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="../css/style.css" rel="stylesheet">
+</head>
+<body data-base="../">
+
+  <div id="site-navbar"></div>
+
+  <div class="page-header">
+    <div class="container">
+      <h1>Book a Service</h1>
+      <p class="text-muted mb-0">Tell us when and where you need help.</p>
+    </div>
+  </div>
+
+  <main class="container py-4">
+    <div id="bookingWrap">
+      <div class="row g-4">
+
+        <!-- Booking form -->
+        <div class="col-lg-7">
+          <form id="bookingForm" class="card-ds" novalidate>
+            <h2 class="h5 fw-bold mb-3">Your Information</h2>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label fw-medium">Name</label>
+                <input type="text" id="custName" class="form-control" readonly>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label fw-medium">Phone</label>
+                <input type="text" id="custPhone" class="form-control" readonly>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="address" class="form-label fw-medium"><i class="bi bi-geo-alt me-1"></i>Service location</label>
+              <textarea id="address" class="form-control" rows="2" placeholder="Enter complete address" required></textarea>
+              <div class="invalid-feedback">Please enter the full address (at least 5 characters).</div>
+            </div>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label for="date" class="form-label fw-medium"><i class="bi bi-calendar me-1"></i>Preferred date</label>
+                <input type="date" id="date" class="form-control" required>
+                <div class="invalid-feedback">Choose today or a future date.</div>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label for="time" class="form-label fw-medium"><i class="bi bi-clock me-1"></i>Preferred time</label>
+                <select id="time" class="form-select" required><option value="">Select a time</option></select>
+                <div class="invalid-feedback">Please select a time.</div>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="hours" class="form-label fw-medium">Estimated hours of work</label>
+              <select id="hours" class="form-select"></select>
+              <div class="form-text">The provider confirms the final time needed on site.</div>
+            </div>
+
+            <div class="mb-4">
+              <label for="notes" class="form-label fw-medium">Additional information (optional)</label>
+              <textarea id="notes" class="form-control" rows="3" placeholder="Describe the problem or any extra details"></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100 py-2">Confirm Booking &amp; Continue to Payment</button>
+          </form>
+        </div>
+
+        <!-- Summary -->
+        <div class="col-lg-5">
+          <div class="card-ds sticky-side">
+            <h2 class="h5 fw-bold mb-3">Booking Summary</h2>
+            <div class="d-flex align-items-center gap-3 mb-3">
+              <span class="avatar" id="sumAvatar"></span>
+              <div>
+                <div class="fw-bold" id="sumName"></div>
+                <small class="text-muted" id="sumCategory"></small>
+              </div>
+            </div>
+            <div class="d-flex justify-content-between small mb-2"><span class="text-muted">Rate</span><span id="sumRate"></span></div>
+            <div class="d-flex justify-content-between small mb-2"><span class="text-muted">Hours</span><span id="sumHours"></span></div>
+            <hr>
+            <div class="d-flex justify-content-between fs-5 fw-bold"><span>Estimated total</span><span id="sumTotal" class="text-primary"></span></div>
+            <p class="small text-muted mt-3 mb-0"><i class="bi bi-info-circle me-1"></i>You will choose how to pay on the next page: online or cash.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <div id="site-footer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="../js/data.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="../js/booking.js"></script>
+</body>
+</html>

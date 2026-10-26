@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Reset - Druk Serve</title></head>
+<body style="font-family:sans-serif;padding:2rem">
+<script>
+  // Removes the saved Druk Serve data so the sample data loads again
+  Object.keys(localStorage).filter(function (k) { return k.indexOf("ds_") === 0; })
+    .forEach(function (k) { localStorage.removeItem(k); });
+  document.write("<h2>Sample data has been reset.</h2><p><a href='login.html'>Go to the login page</a></p>");
+</script>
+</body>
+</html>
