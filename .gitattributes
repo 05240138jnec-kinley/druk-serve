@@ -1,0 +1,2 @@
+# Keep line endings consistent so Git on Windows stops showing LF/CRLF warnings
+* text=auto
