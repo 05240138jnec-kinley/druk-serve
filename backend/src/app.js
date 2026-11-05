@@ -10,7 +10,8 @@ app.use(express.json());   // lets the API read JSON sent by the website
 
 // ---- routes ----
 app.use("/api/health", require("./routes/health"));
-// More routes are added in the next backend steps (auth, providers, bookings, ...).
+app.use("/api/auth", require("./routes/auth"));
+// More routes are added in the next backend steps (providers, bookings, ...).
 
 app.use("/api", notFound);   // any other /api/... address
 app.use(errorHandler);

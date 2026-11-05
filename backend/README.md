@@ -30,9 +30,14 @@ backend/
 └── src/
     ├── app.js             Express app and routes
     ├── config/db.js       MySQL connection
-    ├── middleware/        error handling
-    └── routes/            one file per part of the API
+    ├── middleware/        error handling and login checks
+    ├── routes/            one file per part of the API (health, auth, ...)
+    └── utils/             input checks and user helpers
 ```
+
+## API
+
+See `API.md` for every address, with examples you can paste into Thunder Client.
 
 ## Test accounts (same as the website)
 
