@@ -1,8 +1,8 @@
-/* ===== Customer pages =====
+/* ===== Customer pages (connected to the backend) =====
    Used by: home.html, providers.html, provider-profile.html (and more pages in later steps).
    Each part below only runs if its page is open (it looks for a special id). */
 
-(function () {
+(async function () {
   // Only customers may see these pages. Others are sent to the login page.
   if (!DS.requireRole(["customer"])) return;
 
@@ -10,25 +10,29 @@
   const $ = id => document.getElementById(id);
   const params = new URLSearchParams(location.search);
 
-  // BACKEND: later this will be GET /api/providers?verified=true
-  // Customers only see providers the admin has verified who are accepting bookings.
-  const verifiedProviders = () => DS.get("providers", []).filter(p => DS.bookable(p));
+  const errorBox = message => `<div class="col-12"><div class="card-ds empty-state"><i class="bi bi-wifi-off"></i>
+    ${DS.esc(message)}</div></div>`;
 
   /* ================= HOME PAGE ================= */
   if ($("welcome")) {
-    $("welcome").textContent = "Welcome, " + user.name.split(" ")[0];
+    $("welcome").innerHTML = DS.avatar(user, "me-2", "width:44px;height:44px;font-size:1rem;display:inline-grid;vertical-align:middle") +
+      " Welcome, " + DS.esc(user.name.split(" ")[0]);
 
-    // Service tiles
-    $("serviceGrid").innerHTML = DS.services().map(s => `
-      <div class="col-6 col-md-4 col-lg-3">
-        <a class="service-card" href="providers.html?service=${encodeURIComponent(s.name)}">
-          <span class="icon-circle"><i class="bi ${s.icon}"></i></span>
-          <h3>${s.name}</h3><p>${s.desc}</p>
-        </a>
-      </div>`).join("");
+    // Service tiles + search dropdown  (GET /api/categories)
+    try {
+      const services = await API.get("/categories");
+      $("serviceGrid").innerHTML = services.map(s => `
+        <div class="col-6 col-md-4 col-lg-3">
+          <a class="service-card" href="providers.html?service=${encodeURIComponent(s.name)}">
+            <span class="icon-circle"><i class="bi ${s.icon}"></i></span>
+            <h3>${DS.esc(s.name)}</h3><p>${DS.esc(s.desc)}</p>
+          </a>
+        </div>`).join("");
+      services.forEach(s => $("searchService").insertAdjacentHTML("beforeend", `<option>${DS.esc(s.name)}</option>`));
+    } catch (err) {
+      $("serviceGrid").innerHTML = errorBox(err.message);
+    }
 
-    // Search form
-    DS.services().forEach(s => $("searchService").insertAdjacentHTML("beforeend", `<option>${s.name}</option>`));
     $("searchForm").addEventListener("submit", e => {
       e.preventDefault();
       const p = new URLSearchParams();
@@ -37,69 +41,67 @@
       location.href = "providers.html?" + p.toString();
     });
 
-    // Upcoming bookings (Pending or Confirmed), soonest first
-    // BACKEND: later GET /api/bookings?customerId=...&status=Pending,Confirmed
-    const providers = DS.get("providers", []);
-    const upcoming = DS.get("bookings", [])
-      .filter(b => b.customerId === user.id && (b.status === "Pending" || b.status === "Confirmed"))
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(0, 3);
+    // Upcoming bookings (Pending or Confirmed)  (GET /api/bookings)
+    try {
+      const all = await API.get("/bookings", { status: "Pending,Confirmed" });
+      const upcoming = all.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
 
-    $("upcoming").innerHTML = upcoming.length ? upcoming.map(b => {
-      const p = providers.find(x => x.id === b.providerId);
-      return `<div class="col-md-6 col-lg-4"><div class="card-ds h-100">
+      $("upcoming").innerHTML = upcoming.length ? upcoming.map(b => `<div class="col-md-6 col-lg-4"><div class="card-ds h-100">
         <div class="d-flex justify-content-between align-items-start mb-2">
           <strong>${DS.esc(b.service)}</strong>
           <span class="badge-status st-${b.status}">${b.status}</span>
         </div>
-        <div class="small text-muted"><i class="bi bi-person me-1"></i>${DS.esc(p ? p.name : "Provider")}</div>
+        <div class="small text-muted"><i class="bi bi-person me-1"></i>${DS.esc(b.providerName || "Provider")}</div>
         <div class="small text-muted"><i class="bi bi-calendar me-1"></i>${b.date} at ${b.time}</div>
         <div class="small text-muted"><i class="bi bi-geo-alt me-1"></i>${DS.esc(b.address)}</div>
-      </div></div>`;
-    }).join("") : `<div class="col-12"><div class="card-ds empty-state">
+      </div></div>`).join("") : `<div class="col-12"><div class="card-ds empty-state">
         <i class="bi bi-calendar-x"></i>You have no upcoming bookings yet.<br>
         <a href="providers.html" class="btn btn-primary mt-3">Find a service</a></div></div>`;
+    } catch (err) {
+      $("upcoming").innerHTML = errorBox(err.message);
+    }
 
-    // Top providers
-    $("topProviders").innerHTML = verifiedProviders()
-      .sort((a, b) => b.rating - a.rating).slice(0, 4)
-      .map(p => DS.providerCard(p)).join("");
+    // Top providers  (GET /api/providers?sort=rating&limit=4)
+    try {
+      const top = await API.get("/providers", { sort: "rating", limit: 4 });
+      $("topProviders").innerHTML = top.map(p => DS.providerCard(p)).join("");
+    } catch (err) {
+      $("topProviders").innerHTML = errorBox(err.message);
+    }
   }
 
   /* ================= PROVIDERS LIST PAGE ================= */
   if ($("providerList")) {
     // Fill dropdowns
-    DS.services().forEach(s => $("fService").insertAdjacentHTML("beforeend", `<option>${s.name}</option>`));
+    try {
+      const services = await API.get("/categories");
+      services.forEach(s => $("fService").insertAdjacentHTML("beforeend", `<option>${DS.esc(s.name)}</option>`));
+    } catch (err) { /* the list below will show the error */ }
     LOCATIONS.forEach(l => $("fLocation").insertAdjacentHTML("beforeend", `<option>${l}</option>`));
 
     // Start with any search words sent from the home page
     $("fQ").value = params.get("q") || "";
     $("fService").value = params.get("service") || "";
 
-    function showProviders() {
-      let list = verifiedProviders();
-
-      // Keyword: matches if ANY word (first 4 letters) appears in the name, category, bio or location
-      // so "leaking tap" still finds "Fixes leaks, installs taps".
-      const words = $("fQ").value.toLowerCase().split(/\s+/).filter(w => w.length >= 3).map(w => w.slice(0, 4));
-      if (words.length) {
-        list = list.filter(p => {
-          const text = (p.name + " " + p.category + " " + p.bio + " " + p.location).toLowerCase();
-          return words.some(w => text.includes(w));
+    let latest = 0;   // so an old slow answer never replaces a newer one
+    async function showProviders() {
+      const mine = ++latest;
+      let list;
+      try {
+        // The server filters and sorts: GET /api/providers?q=&service=&location=&maxPrice=&minRating=&sort=
+        list = await API.get("/providers", {
+          q: $("fQ").value.trim(),
+          service: $("fService").value,
+          location: $("fLocation").value,
+          maxPrice: Number($("fPrice").value) || "",
+          minRating: Number($("fRating").value) || "",
+          sort: $("fSort").value
         });
+      } catch (err) {
+        if (mine === latest) { $("resultCount").textContent = ""; $("providerList").innerHTML = errorBox(err.message); }
+        return;
       }
-      if ($("fService").value)  list = list.filter(p => p.category === $("fService").value);
-      if ($("fLocation").value) list = list.filter(p => p.location === $("fLocation").value);
-      if (Number($("fPrice").value))  list = list.filter(p => p.rate <= Number($("fPrice").value));
-      if (Number($("fRating").value)) list = list.filter(p => p.rating >= Number($("fRating").value));
-
-      const sorters = {
-        rating:     (a, b) => b.rating - a.rating,
-        priceLow:   (a, b) => a.rate - b.rate,
-        priceHigh:  (a, b) => b.rate - a.rate,
-        experience: (a, b) => b.experience - a.experience
-      };
-      list.sort(sorters[$("fSort").value]);
+      if (mine !== latest) return;
 
       $("resultCount").textContent = list.length + (list.length === 1 ? " provider found" : " providers found");
       $("providerList").innerHTML = list.length
@@ -108,9 +110,9 @@
              No providers match your filters.<br>Try changing or resetting the filters.</div></div>`;
     }
 
-    ["fQ", "fService", "fLocation", "fPrice", "fRating", "fSort"].forEach(id => {
-      $(id).addEventListener(id === "fQ" ? "input" : "change", showProviders);
-    });
+    let timer;
+    $("fQ").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(showProviders, 300); });
+    ["fService", "fLocation", "fPrice", "fRating", "fSort"].forEach(id => $(id).addEventListener("change", showProviders));
     $("resetBtn").addEventListener("click", () => {
       $("fQ").value = ""; $("fService").value = ""; $("fLocation").value = "";
       $("fPrice").value = "0"; $("fRating").value = "0"; $("fSort").value = "rating";
@@ -121,28 +123,25 @@
 
   /* ================= PROVIDER PROFILE PAGE ================= */
   if ($("profileBox")) {
-    // BACKEND: later GET /api/providers/:id
-    const p = DS.get("providers", []).find(x => x.id === Number(params.get("id")));
+    let p = null;
+    try {
+      p = await API.get("/providers/" + encodeURIComponent(params.get("id")));   // GET /api/providers/:id
+    } catch (err) { /* not found: handled below */ }
 
     if (!p) {
       $("profileBox").innerHTML = `<div class="card-ds empty-state"><i class="bi bi-person-x"></i>
         Provider not found.<br><a href="providers.html" class="btn btn-primary mt-3">Back to providers</a></div>`;
     } else {
-      // Reviews for this provider (table: Feedback)
-      const users = DS.get("users", []);
-      const reviews = DS.get("feedback", []).filter(f => f.providerId === p.id)
-        .sort((a, b) => b.date.localeCompare(a.date));
+      const reviews = p.reviewList || [];
 
-      const reviewHtml = reviews.length ? reviews.map(r => {
-        const c = users.find(u => u.id === r.customerId);
-        return `<div class="review">
+      const reviewHtml = reviews.length ? reviews.map(r => `<div class="review">
           <div class="d-flex justify-content-between">
-            <strong>${DS.esc(c ? c.name : "Customer")}</strong><small class="text-muted">${r.date}</small>
+            <strong>${DS.esc(r.customerName || "Customer")}</strong><small class="text-muted">${r.date}</small>
           </div>
           <div>${DS.stars(r.rating)}</div>
           <p class="mb-0 mt-1">${DS.esc(r.comment || "")}</p>
-          ${r.reply ? `<div class="reply-box"><small class="text-muted">Reply from ${DS.esc(p.name)}</small><div>${DS.esc(r.reply)}</div></div>` : ""}</div>`;
-      }).join("") : `<p class="text-muted mb-0">No reviews yet.</p>`;
+          ${r.reply ? `<div class="reply-box"><small class="text-muted">Reply from ${DS.esc(p.name)}</small><div>${DS.esc(r.reply)}</div></div>` : ""}</div>`
+      ).join("") : `<p class="text-muted mb-0">No reviews yet.</p>`;
 
       const sch = DS.schedule(p);
       const bookBtn = !p.verified
@@ -155,7 +154,7 @@
         <div class="col-lg-8">
           <div class="card-ds mb-4">
             <div class="d-flex flex-wrap align-items-center gap-3">
-              <span class="avatar profile-avatar" style="background:${DS.color(p.id)}">${DS.initials(p.name)}</span>
+              ${DS.avatar(p, "profile-avatar")}
               <div>
                 <h1 class="h3 fw-bold mb-1">${DS.esc(p.name)}
                   ${p.verified ? '<i class="bi bi-patch-check-fill text-primary fs-5" title="Verified"></i>' : ""}</h1>

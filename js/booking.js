@@ -1,32 +1,31 @@
-/* ===== Booking, Payment and My Bookings =====
+/* ===== Booking, Payment and My Bookings (connected to the backend) =====
    Used by: booking.html, payment.html, my-bookings.html
    Each part only runs if its page is open (it looks for a special id). */
 
-(function () {
+(async function () {
   if (!DS.requireRole(["customer"])) return;
 
   const user = DS.user();
   const $ = id => document.getElementById(id);
   const params = new URLSearchParams(location.search);
 
-  // BACKEND: these three become API calls later (GET/POST/PUT /api/bookings ...)
-  const getProviders = () => DS.get("providers", []);
-  const getBookings = () => DS.get("bookings", []);
-  const saveBookings = list => DS.set("bookings", list);
-
   function messageCard(wrapId, icon, text) {
-    $(wrapId).innerHTML = `<div class="card-ds empty-state"><i class="bi ${icon}"></i>${text}<br>
+    $(wrapId).innerHTML = `<div class="card-ds empty-state"><i class="bi ${icon}"></i>${DS.esc(text)}<br>
       <a href="providers.html" class="btn btn-primary mt-3">Find a service</a></div>`;
   }
 
   /* ================= BOOKING PAGE ================= */
   if ($("bookingWrap")) {
-    const p = getProviders().find(x => x.id === Number(params.get("provider")));
+    let p = null, me = {};
+    try {
+      p = await API.get("/providers/" + encodeURIComponent(params.get("provider")));   // GET /api/providers/:id
+      me = await API.get("/profile");                                                  // GET /api/profile
+    } catch (err) { /* handled below */ }
+
     if (!p || !DS.bookable(p)) {
       messageCard("bookingWrap", "bi-person-x", "This provider is not available for booking.");
       return;
     }
-    const me = DS.get("users", []).find(u => u.id === user.id) || {};
 
     // Fill the form
     $("custName").value = me.name || user.name;
@@ -43,11 +42,11 @@
       $("hours").insertAdjacentHTML("beforeend", `<option value="${h}">${h} hour${h > 1 ? "s" : ""}</option>`);
     }
 
-    // Summary box
+    // Summary box (this total is only a preview: the server calculates the real price)
     $("sumAvatar").textContent = DS.initials(p.name);
     $("sumAvatar").style.background = DS.color(p.id);
     $("sumName").textContent = p.name;
-    $("sumCategory").textContent = p.category + " \u00B7 " + p.location;
+    $("sumCategory").textContent = p.category + " · " + p.location;
     $("sumRate").textContent = "Nu. " + p.rate + " / hour";
 
     function updateTotal() {
@@ -58,7 +57,7 @@
     $("hours").addEventListener("change", updateTotal);
     updateTotal();
 
-    $("bookingForm").addEventListener("submit", e => {
+    $("bookingForm").addEventListener("submit", async e => {
       e.preventDefault();
       let ok = true;
       function check(id, valid) {
@@ -73,38 +72,34 @@
       check("time", $("time").value !== "");
       if (!ok) return;
 
-      // BACKEND: replace this block with POST /api/bookings
-      const list = getBookings();
-      const hours = Number($("hours").value);
-      const booking = {
-        id: DS.nextId(list),
-        customerId: user.id,
-        providerId: p.id,
-        service: p.category,
-        date: $("date").value,
-        time: $("time").value,
-        address: $("address").value.trim(),
-        notes: $("notes").value.trim(),
-        hours: hours,
-        status: "Pending",          // the provider will Accept it (Step 5)
-        amount: p.rate * hours,
-        payMethod: "",
-        paid: false
-      };
-      list.push(booking);
-      saveBookings(list);
-      DS.notify("provider", "bi-calendar-plus", "New Request",
-        user.name + " requested a " + p.category.toLowerCase() + " job on " + DS.niceDate(booking.date) + ".");
-
-      location.href = "payment.html?booking=" + booking.id;
+      const button = e.submitter || $("bookingForm").querySelector("[type=submit]");
+      if (button) button.disabled = true;
+      try {
+        // POST /api/bookings : the server checks the time, stops double booking and works out the price
+        const booking = await API.post("/bookings", {
+          providerId: p.id,
+          date: $("date").value,
+          time: $("time").value,
+          hours: Number($("hours").value),
+          address: $("address").value.trim(),
+          notes: $("notes").value.trim()
+        });
+        location.href = "my-bookings.html?msg=" + encodeURIComponent("Booking sent to the provider. You pay after the job is done.");
+      } catch (err) {
+        if (err.fields && err.fields.time) { $("time").classList.add("is-invalid"); }
+        if (err.fields && err.fields.date) { $("dateMsg").textContent = err.fields.date; $("date").classList.add("is-invalid"); }
+        DS.toast(err.message, "danger");
+        if (button) button.disabled = false;
+      }
     });
   }
 
   /* ================= PAYMENT PAGE ================= */
   if ($("paymentWrap")) {
-    const list = getBookings();
-    const b = list.find(x => x.id === Number(params.get("booking")) && x.customerId === user.id);
-    const p = b ? getProviders().find(x => x.id === b.providerId) : null;
+    let b = null;
+    try {
+      b = await API.get("/bookings/" + encodeURIComponent(params.get("booking")));   // GET /api/bookings/:id
+    } catch (err) { /* handled below */ }
 
     if (!b) {
       messageCard("paymentWrap", "bi-receipt", "Booking not found.");
@@ -112,6 +107,10 @@
     }
     if (b.status === "Cancelled") {
       messageCard("paymentWrap", "bi-x-circle", "This booking was cancelled, so it cannot be paid.");
+      return;
+    }
+    if (b.status !== "Completed") {
+      messageCard("paymentWrap", "bi-hourglass-split", "You can pay once the provider has finished the job.");
       return;
     }
     if (b.paid) {
@@ -123,8 +122,8 @@
     $("paySummary").innerHTML = `
       <h2 class="h5 fw-bold mb-3">Booking Summary</h2>
       <div class="d-flex align-items-center gap-3 mb-3">
-        <span class="avatar" style="background:${DS.color(b.providerId)}">${DS.initials(p ? p.name : "P")}</span>
-        <div><div class="fw-bold">${DS.esc(p ? p.name : "Provider")}</div><small class="text-muted">${DS.esc(b.service)}</small></div>
+        <span class="avatar" style="background:${DS.color(b.providerId)}">${DS.initials(b.providerName || "P")}</span>
+        <div><div class="fw-bold">${DS.esc(b.providerName || "Provider")}</div><small class="text-muted">${DS.esc(b.service)}</small></div>
       </div>
       <div class="small mb-2"><i class="bi bi-calendar me-2 text-muted"></i>${DS.niceDate(b.date)} at ${DS.niceTime(b.time)}</div>
       <div class="small mb-2"><i class="bi bi-geo-alt me-2 text-muted"></i>${DS.esc(b.address)}</div>
@@ -149,31 +148,25 @@
       $("successText").textContent = text;
     }
 
-    $("payBtn").addEventListener("click", () => {
+    $("payBtn").addEventListener("click", async () => {
       const online = document.querySelector("input[name=payType]:checked").value === "online";
-      const fresh = getBookings();
-      const bk = fresh.find(x => x.id === b.id);
+      const method = online ? document.querySelector("input[name=gateway]:checked").value : "Cash";
 
-      if (online) {
-        // BACKEND: this is only a pretend payment.
-        // Later the server starts a payment with BOB mPay / BNB ePay and confirms it (POST /api/payments).
-        const gateway = document.querySelector("input[name=gateway]:checked").value;
-        $("payBtn").disabled = true;
-        $("payBtn").innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
-        setTimeout(() => {
-          bk.paid = true;
-          bk.payMethod = gateway;
-          bk.txn = "DS" + Date.now().toString().slice(-8);
-          saveBookings(fresh);
-          DS.notify("customer", "bi-credit-card-fill", "Payment", "Your payment of " + DS.money(bk.amount) + " was successful.");
-          DS.notify("provider", "bi-cash-coin", "Payment Received", "A customer paid " + DS.money(bk.amount) + " online.");
-          showSuccess("Payment successful!", "Reference " + bk.txn + ". Your booking has been sent to the provider.");
-        }, 1500);
-      } else {
-        bk.payMethod = "Cash";
-        bk.paid = false;
-        saveBookings(fresh);
-        showSuccess("Booking sent!", "Please pay " + DS.money(bk.amount) + " in cash to the provider after the service.");
+      $("payBtn").disabled = true;
+      if (online) $("payBtn").innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+      try {
+        // POST /api/payments : the server takes the amount from the booking and talks to the payment gateway
+        // (PAYMENT_MODE=sandbox pretends the payment worked)
+        const done = await API.post("/payments", { bookingId: b.id, method: method });
+        if (online) {
+          showSuccess("Payment successful!", "Reference " + done.txn + ". Thank you! Please rate the service from My Bookings.");
+        } else {
+          showSuccess("Cash payment recorded!", "You paid " + DS.money(done.amount) + " in cash to the provider. Please rate the service from My Bookings.");
+        }
+      } catch (err) {
+        DS.toast(err.message, "danger");
+        $("payBtn").disabled = false;
+        refreshChoice();
       }
     });
   }
@@ -182,6 +175,7 @@
   if ($("currentList")) {
     const modal = id => bootstrap.Modal.getOrCreateInstance($(id));
     let cancelId = null;
+    let bookings = [];
 
     if (params.get("msg")) {
       $("pageAlert").innerHTML = `<div class="alert alert-success">${DS.esc(params.get("msg"))}</div>`;
@@ -203,26 +197,25 @@
 
     function payLabel(b) {
       if (b.paid) return `<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Paid via ${DS.esc(b.payMethod)}</span>`;
-      if (b.payMethod === "Cash") return `<span class="text-muted"><i class="bi bi-cash me-1"></i>Cash on service</span>`;
       if (b.status === "Cancelled") return `<span class="text-muted">-</span>`;
-      return `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Payment pending</span>`;
+      if (b.status === "Completed") return `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Payment due</span>`;
+      return `<span class="text-muted"><i class="bi bi-clock me-1"></i>Pay after the job</span>`;
     }
 
-    function card(b, providers, feedback) {
-      const p = providers.find(x => x.id === b.providerId);
+    function card(b) {
       const active = b.status === "Pending" || b.status === "Confirmed";
-      const fb = feedback.find(f => f.bookingId === b.id);
+      const rated = b.rating !== null && b.rating !== undefined;
       let buttons = `<button class="btn btn-sm btn-outline-secondary" data-action="details" data-id="${b.id}">View Details</button>`;
-      if (active && !b.paid && !b.payMethod) buttons += `<a class="btn btn-sm btn-primary" href="payment.html?booking=${b.id}">Pay Now</a>`;
+      if (b.status === "Completed" && !b.paid) buttons += `<a class="btn btn-sm btn-primary" href="payment.html?booking=${b.id}">Pay Now</a>`;
       if (active) buttons += `<button class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="${b.id}">Cancel</button>`;
-      if (b.status === "Completed" && !fb) buttons += `<a class="btn btn-sm btn-accent" href="feedback.html?booking=${b.id}">Rate Service</a>`;
-      if (fb) buttons += `<span class="align-self-center small">Your rating: ${DS.stars(fb.rating)}</span>`;
+      if (b.status === "Completed" && !rated) buttons += `<a class="btn btn-sm btn-accent" href="feedback.html?booking=${b.id}">Rate Service</a>`;
+      if (rated) buttons += `<span class="align-self-center small">Your rating: ${DS.stars(b.rating)}</span>`;
 
       return `<div class="card-ds mb-3">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
           <div class="d-flex align-items-center gap-3">
-            <span class="avatar" style="background:${DS.color(b.providerId)}">${DS.initials(p ? p.name : "P")}</span>
-            <div><h3 class="h6 mb-0">${DS.esc(b.service)} &middot; ${DS.esc(p ? p.name : "Provider")}</h3>
+            <span class="avatar" style="background:${DS.color(b.providerId)}">${DS.initials(b.providerName || "P")}</span>
+            <div><h3 class="h6 mb-0">${DS.esc(b.service)} &middot; ${DS.esc(b.providerName || "Provider")}</h3>
               <small class="text-muted">Booking #${b.id}</small></div>
           </div>
           <span class="badge-status st-${b.status}">${b.status}</span>
@@ -237,35 +230,38 @@
       </div>`;
     }
 
-    function render() {
-      // BACKEND: later GET /api/bookings?customerId=...
-      const providers = getProviders();
-      const feedback = DS.get("feedback", []);
-      const mine = getBookings().filter(b => b.customerId === user.id).sort((a, b) => b.date.localeCompare(a.date));
+    async function render() {
+      try {
+        bookings = await API.get("/bookings");   // GET /api/bookings (the server only sends YOUR bookings)
+      } catch (err) {
+        $("currentList").innerHTML = `<div class="card-ds empty-state"><i class="bi bi-wifi-off"></i>${DS.esc(err.message)}</div>`;
+        return;
+      }
+      const mine = bookings.slice().sort((a, b) => b.date.localeCompare(a.date));
       const current = mine.filter(b => b.status === "Pending" || b.status === "Confirmed");
       const past = mine.filter(b => b.status === "Completed" || b.status === "Cancelled");
 
       $("tabCurrent").textContent = "Current (" + current.length + ")";
       $("tabPast").textContent = "Past (" + past.length + ")";
       const empty = text => `<div class="card-ds empty-state"><i class="bi bi-calendar-x"></i>${text}</div>`;
-      $("currentList").innerHTML = current.length ? current.map(b => card(b, providers, feedback)).join("") : empty("No current bookings.");
-      $("pastList").innerHTML = past.length ? past.map(b => card(b, providers, feedback)).join("") : empty("No past bookings yet.");
+      $("currentList").innerHTML = current.length ? current.map(card).join("") : empty("No current bookings.");
+      $("pastList").innerHTML = past.length ? past.map(card).join("") : empty("No past bookings yet.");
     }
 
     function showDetails(id) {
-      const b = getBookings().find(x => x.id === id);
-      const p = getProviders().find(x => x.id === b.providerId);
+      const b = bookings.find(x => x.id === id);
+      if (!b) return;
       const row = (k, v) => `<tr><th class="text-muted fw-normal" style="width:38%">${k}</th><td>${v}</td></tr>`;
       $("detailsBody").innerHTML = `<table class="table table-sm mb-0"><tbody>` +
         row("Booking", "#" + b.id) +
         row("Service", DS.esc(b.service)) +
-        row("Provider", DS.esc(p ? p.name : "-") + (p ? "<br><small class='text-muted'>Phone: " + DS.esc(p.phone) + "</small>" : "")) +
+        row("Provider", DS.esc(b.providerName || "-") + (b.providerPhone ? "<br><small class='text-muted'>Phone: " + DS.esc(b.providerPhone) + "</small>" : "")) +
         row("Date and time", DS.niceDate(b.date) + " at " + DS.niceTime(b.time)) +
         row("Address", DS.esc(b.address)) +
         row("Hours", b.hours ? b.hours : "-") +
         row("Notes", DS.esc(b.notes || "-")) +
         row("Total", DS.money(b.amount)) +
-        row("Payment", payLabel(b) + (b.txn ? "<br><small class='text-muted'>Ref: " + b.txn + "</small>" : "")) +
+        row("Payment", payLabel(b) + (b.txn ? "<br><small class='text-muted'>Ref: " + DS.esc(b.txn) + "</small>" : "")) +
         row("Status", `<span class="badge-status st-${b.status}">${b.status}</span>`) +
         `</tbody></table>`;
       modal("detailsModal").show();
@@ -280,20 +276,19 @@
       if (btn.dataset.action === "cancel") { cancelId = id; modal("cancelModal").show(); }
     });
 
-    $("confirmCancel").addEventListener("click", () => {
-      // BACKEND: later PUT /api/bookings/:id  { status: "Cancelled" }
-      const list = getBookings();
-      const b = list.find(x => x.id === cancelId);
-      if (b) {
-        b.status = "Cancelled";
-        saveBookings(list);
-        DS.notify("provider", "bi-x-circle-fill", "Booking Cancelled", "A customer cancelled a " + b.service.toLowerCase() + " booking.");
+    $("confirmCancel").addEventListener("click", async () => {
+      try {
+        // PUT /api/bookings/:id : the server checks that this booking is yours and may be cancelled
+        await API.put("/bookings/" + cancelId, { status: "Cancelled" });
+        modal("cancelModal").hide();
+        await render();
+        $("pageAlert").innerHTML = `<div class="alert alert-secondary">Your booking was cancelled.</div>`;
+      } catch (err) {
+        modal("cancelModal").hide();
+        $("pageAlert").innerHTML = `<div class="alert alert-danger">${DS.esc(err.message)}</div>`;
       }
-      modal("cancelModal").hide();
-      render();
-      $("pageAlert").innerHTML = `<div class="alert alert-secondary">Your booking was cancelled.</div>`;
     });
 
-    render();
+    await render();
   }
 })();
