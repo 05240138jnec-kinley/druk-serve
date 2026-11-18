@@ -34,18 +34,17 @@ const DS = {
   // BACKEND: later, the server will give a login token (JWT) instead of this.
   user() { return this.get("session", null); },
   login(u) {
-    this.set("session", { id: u.id, role: u.role, name: u.name, email: u.email, providerId: u.providerId || null });
+    this.set("session", { id: u.id, role: u.role, name: u.name, email: u.email, providerId: u.providerId || null, photo: u.photo || null });
   },
   logout() {
+        localStorage.removeItem("ds_token"); localStorage.removeItem("ds_user");
     localStorage.removeItem("ds_session");
     location.href = this.base + "login.html";
   },
   // Call at the top of protected pages. Sends visitors to the login page if the role is wrong.
   requireRole(roles) {
     const u = this.user();
-    const record = u && this.get("users", []).find(x => x.id === u.id);
-    if (!u || !record || record.suspended || !roles.includes(u.role)) {
-      if (record && record.suspended) localStorage.removeItem("ds_session");   // suspended by the admin
+    if (!u || !localStorage.getItem("ds_token") || !roles.includes(u.role)) {
       location.href = this.base + "login.html";
       return false;
     }
@@ -57,6 +56,15 @@ const DS = {
     const d = document.createElement("div");
     d.textContent = text == null ? "" : String(text);
     return d.innerHTML;
+  },
+  // A round picture: the person's photo when they have one, otherwise their initials (the default picture).
+  // person = { id, name, photo }  (photo is the path saved by the backend, for example /uploads/avatars/x.jpg)
+  avatar(person, cls = "", style = "") {
+    const src = person.photo && typeof API !== "undefined" ? API.fileUrl(person.photo) : "";
+    if (src) {
+      return `<span class="avatar ${cls}" style="padding:0;overflow:hidden;${style}"><img src="${this.esc(src)}" alt="" style="width:100%;height:100%;object-fit:cover"></span>`;
+    }
+    return `<span class="avatar ${cls}" style="background:${this.color(person.id)};${style}">${this.initials(person.name)}</span>`;
   },
   initials(name) {
     return String(name).trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase();
@@ -142,7 +150,7 @@ const DS = {
   providerCard(p, cols = "col-sm-6 col-lg-3") {
     return `<div class="${cols}"><div class="provider-card h-100">
       <div class="d-flex align-items-center gap-3 mb-3">
-        <span class="avatar" style="background:${this.color(p.id)}">${this.initials(p.name)}</span>
+        ${this.avatar(p)}
         <div>
           <h3 class="h6 mb-0">${this.esc(p.name)} ${p.verified ? '<i class="bi bi-patch-check-fill text-primary" title="Verified"></i>' : ""}</h3>
           <small class="text-muted">${this.esc(p.category)}</small>
@@ -182,7 +190,7 @@ const DS = {
       right = `<a href="${this.base}login.html" class="btn btn-outline-primary">Log in</a>
                <a href="${this.base}register.html" class="btn btn-primary">Register</a>`;
     } else {
-      const unread = this.get("notifications", []).filter(n => n.role === u.role && !n.read).length;
+      const unread = this.unreadCount || 0;
       const badge = unread ? `<span class="badge rounded-pill bg-danger nav-badge">${unread}</span>` : "";
       const noteLink = role === "admin" ? "" :
         `<li><a class="dropdown-item" href="${this.base}${role}/notifications.html"><i class="bi bi-bell me-2"></i>Notifications ${badge}</a></li>`;
@@ -190,7 +198,7 @@ const DS = {
         `<li><a class="dropdown-item" href="${this.base}${role}/profile.html"><i class="bi bi-person me-2"></i>My Profile</a></li>`;
       right = `<div class="dropdown">
         <button class="btn btn-light border d-flex align-items-center gap-2" data-bs-toggle="dropdown">
-          <span class="avatar" style="width:30px;height:30px;font-size:.75rem;background:${this.color(u.id)}">${this.initials(u.name)}</span>
+          ${this.avatar(u, "", "width:30px;height:30px;font-size:.75rem")}
           <span class="d-none d-md-inline">${this.esc(u.name)}</span> ${badge}
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
@@ -209,6 +217,15 @@ const DS = {
 
     const out = document.getElementById("logoutBtn");
     if (out) out.addEventListener("click", () => this.logout());
+    
+    // The red number: ask the backend (only on pages that load api.js)
+    if (u && role !== "admin" && typeof API !== "undefined" && !this._fetchingUnread) {
+      this._fetchingUnread = true;
+      API.get("/notifications/unread-count").then(r => {
+        this._fetchingUnread = false;
+        if (r.count !== this.unreadCount) { this.unreadCount = r.count; this.renderNavbar(); }
+      }).catch(() => { this._fetchingUnread = false; });
+    }
   },
 
   renderFooter() {
@@ -238,6 +255,6 @@ const DS = {
   }
 };
 
-DS.seed();
+
 DS.renderNavbar();
 DS.renderFooter();

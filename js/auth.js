@@ -41,13 +41,43 @@ if (loginForm) {
   // BACKEND: these two need a real server later (email reset link, Google sign-in).
   document.getElementById("forgotLink").addEventListener("click", e => {
     e.preventDefault();
-    DS.toast("Password reset needs the backend. It will email a reset link.", "secondary");
-  });
-  document.getElementById("googleBtn").addEventListener("click", () => {
-    DS.toast("Google sign-in needs the backend. Use email and password for now.", "secondary");
+    location.href = "forgot.html";
   });
 
-  loginForm.addEventListener("submit", e => {
+  // Sign in with Google (Google's own button, loaded from Google)
+  (async () => {
+    const btn = document.getElementById("googleBtn");
+    let clientId = null;
+    try { clientId = (await API.get("/auth-config")).googleClientId; } catch (e) { /* backend is off */ }
+    if (!clientId) {
+      btn.addEventListener("click", () => DS.toast("Google sign-in is not set up yet. Use email and password.", "secondary"));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.onload = () => {
+      google.accounts.id.initialize({
+        client_id: clientId,
+        callback: async response => {
+          try {
+            const res = await API.post("/google-login", { credential: response.credential });   // POST /api/google-login
+            API.saveSession(res.token, res.user);
+            DS.login(res.user);
+            location.href = DS.base + (res.created ? "customer/profile.html?welcome=1" : HOME_PAGE[res.user.role]);
+          } catch (err) {
+            showAlert("loginAlert", err.message, "danger");
+          }
+        }
+      });
+      const holder = document.createElement("div");
+      holder.className = "d-flex justify-content-center";
+      btn.replaceWith(holder);
+      google.accounts.id.renderButton(holder, { theme: "outline", size: "large", text: "signin_with", width: 320 });
+    };
+    document.head.appendChild(script);
+  })();  
+
+  loginForm.addEventListener("submit", async e => {
     e.preventDefault();
     const emailEl = document.getElementById("email");
     const pwEl = document.getElementById("password");
@@ -57,31 +87,18 @@ if (loginForm) {
     pwEl.classList.toggle("is-invalid", !pwEl.value);
     if (!emailEl.checkValidity() || !pwEl.value) return;
 
-    // BACKEND: replace this block with a call to POST /api/login
-    // (a real server should show ONE general message such as "Wrong email or password";
-    //  the specific messages below are only to help you while testing)
-    const email = emailEl.value.trim().toLowerCase();
-    const user = DS.get("users", []).find(u => u.email.toLowerCase() === email);
-
-    if (!user) {
-      showAlert("loginAlert", "No account found with this email. Please register first, or use a test account below.", "danger");
-      return;
+    try {
+      const { token, user } = await API.post("/login", {
+        email: emailEl.value.trim().toLowerCase(),
+        password: pwEl.value,
+        role: role
+      });
+      API.saveSession(token, user);   // token for the backend
+      DS.login(user);                 // keeps the pages that still use localStorage working
+      location.href = DS.base + HOME_PAGE[user.role];
+    } catch (err) {
+      showAlert("loginAlert", err.message, "danger");
     }
-    if (user.password !== pwEl.value) {
-      showAlert("loginAlert", "Incorrect password. Please try again.", "danger");
-      return;
-    }
-    if (user.suspended) {
-      showAlert("loginAlert", "This account has been suspended. Please contact the admin.", "danger");
-      return;
-    }
-    if (user.role !== role) {
-      showAlert("loginAlert", "This email is registered as a " + user.role + ". Please select \"" +
-        user.role.charAt(0).toUpperCase() + user.role.slice(1) + "\" above.", "danger");
-      return;
-    }
-    DS.login(user);
-    location.href = DS.base + HOME_PAGE[user.role];
   });
 }
 
@@ -92,8 +109,10 @@ if (regForm) {
 
   // Fill the dropdowns
   $("location").innerHTML = LOCATIONS.map(l => `<option>${l}</option>`).join("");
-  $("category").innerHTML = DS.services().map(s => `<option>${s.name}</option>`).join("");
-
+  API.get("/categories").then(list => {
+    $("category").innerHTML = list.map(s => `<option>${DS.esc(s.name)}</option>`).join("");
+  }).catch(() => {});
+  
   // Customer / Provider switch
   function applyRole() {
     const isProvider = document.querySelector("input[name=role]:checked").value === "provider";
@@ -122,11 +141,10 @@ if (regForm) {
     bar.style.background = ["#DC2626", "#DC2626", "#F59E0B", "#16A34A", "#16A34A"][score];
   });
 
-  regForm.addEventListener("submit", e => {
+    regForm.addEventListener("submit", async e => {
     e.preventDefault();
     const role = document.querySelector("input[name=role]:checked").value;
     const isProvider = role === "provider";
-    const users = DS.get("users", []);
     let ok = true;
 
     function check(id, valid, message) {
@@ -140,9 +158,7 @@ if (regForm) {
     }
 
     check("name", $("name").value.trim().length >= 3);
-    const emailTaken = users.some(u => u.email.toLowerCase() === $("email").value.trim().toLowerCase());
-    check("email", $("email").checkValidity() && !emailTaken,
-          emailTaken ? "This email is already registered." : "Please enter a valid email.");
+        check("email", $("email").checkValidity(), "Please enter a valid email."); 
     check("phone", $("phone").checkValidity() && $("phone").value !== "");
     if (!isProvider) check("address", $("address").value.trim().length >= 5);
     if (isProvider) check("rate", Number($("rate").value) >= 50);
@@ -152,34 +168,24 @@ if (regForm) {
     if (!$("terms").checked) ok = false;
     if (!ok) { showAlert("regAlert", "Please fix the highlighted fields.", "danger"); return; }
 
-    // BACKEND: replace this block with POST /api/register
-    // (the server must save password_hash, never the real password)
-    const newUser = {
-      id: Date.now(),
-      role: role,
-      name: $("name").value.trim(),
-      email: $("email").value.trim().toLowerCase(),
-      phone: $("phone").value.trim(),
-      location: $("location").value,
-      address: isProvider ? "" : $("address").value.trim(),
-      password: $("password").value
-    };
-
-    if (isProvider) {
-      const providers = DS.get("providers", []);
-      const providerId = Date.now();
-      providers.push({
-        id: providerId, name: newUser.name, category: $("category").value, rating: 0, reviews: 0,
-        experience: Number($("experience").value) || 0, rate: Number($("rate").value),
-        location: newUser.location, verified: false,      // the admin must verify later
-        phone: newUser.phone, email: newUser.email, bio: $("bio").value.trim()
+        try {
+      await API.post("/register", {
+        role: role,
+        name: $("name").value.trim(),
+        email: $("email").value.trim().toLowerCase(),
+        phone: $("phone").value.trim(),
+        location: $("location").value,
+        address: isProvider ? "" : $("address").value.trim(),
+        password: $("password").value,
+        category: isProvider ? $("category").value : undefined,
+        rate: isProvider ? Number($("rate").value) : undefined,
+        experience: isProvider ? Number($("experience").value) || 0 : undefined,
+        bio: isProvider ? $("bio").value.trim() : undefined
       });
-      DS.set("providers", providers);
-      newUser.providerId = providerId;
+      location.href = "login.html?registered=1";
+    } catch (err) {
+      Object.entries(err.fields || {}).forEach(([id, msg]) => check(id, false, msg));
+      showAlert("regAlert", err.message, "danger");
     }
-
-    users.push(newUser);
-    DS.set("users", users);
-    location.href = "login.html?registered=1";
   });
 }
