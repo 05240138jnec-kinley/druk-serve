@@ -1,0 +1,20 @@
+# Optional: run MySQL in Docker instead of installing it.
+#   docker compose up -d
+# The tables are created automatically the first time (from database/schema.sql).
+# Then use these values in .env:  DB_HOST=127.0.0.1  DB_USER=root  DB_PASSWORD=drukserve_root  DB_NAME=druk_serve
+services:
+  db:
+    image: mysql:8.0
+    container_name: druk-serve-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: drukserve_root
+      MYSQL_DATABASE: druk_serve
+    ports:
+      - "3306:3306"
+    volumes:
+      - drukserve_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+volumes:
+  drukserve_data:

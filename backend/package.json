@@ -1,0 +1,29 @@
+{
+  "name": "druk-serve-backend",
+  "version": "1.0.0",
+  "description": "REST API for Druk Serve - home service booking for Bhutan (Node.js, Express, MySQL)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "db:setup": "node database/setup.js",
+    "db:reset": "node database/setup.js --reset",
+    "db:seed": "node database/seed.js",
+    "db:reseed": "node database/setup.js --reset && node database/seed.js",
+    "test": "node --test test/utils.test.js test/token.test.js test/journey.test.js test/http.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "google-auth-library": "^11.3.4",
+    "helmet": "^7.1.0",
+    "mysql2": "^3.11.0",
+    "nodemailer": "^10.5.0"
+  }
+}
