@@ -57,8 +57,59 @@
     $("hours").addEventListener("change", updateTotal);
     updateTotal();
 
+    // Feedback after every attempt: a red/yellow message at the top of the form (and a small pop-up), so it is never missed.
+    function showFormMessage(text, type) {
+      let box = $("bookingAlert");
+      if (!box) {
+        box = document.createElement("div");
+        box.id = "bookingAlert";
+        box.setAttribute("role", "alert");
+        $("bookingForm").prepend(box);
+      }
+      box.className = "alert alert-" + type;
+      box.textContent = text;
+      box.scrollIntoView({ behavior: "smooth", block: "center" });
+      DS.toast(text, type);
+    }
+
+    // The pop-up shown after a booking was saved: what was booked, the status and what happens next.
+    function showBookingSuccess(b) {
+      const old = $("bookingDoneModal");
+      if (old) old.remove();
+      const row = (k, v) => `<tr><th class="text-muted fw-normal" style="width:38%">${k}</th><td>${v}</td></tr>`;
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="modal fade" id="bookingDoneModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="bookingDoneTitle" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-body p-4">
+              <div class="text-center mb-3">
+                <i class="bi bi-check-circle-fill text-success" style="font-size:3rem"></i>
+                <h2 class="h4 fw-bold mt-2 mb-1" id="bookingDoneTitle">Booking submitted successfully!</h2>
+                <p class="text-muted mb-0">Your request has been sent to ${DS.esc(b.providerName || p.name)}. You will get a notification when they respond.</p>
+              </div>
+              <table class="table table-sm mb-3"><tbody>
+                ${row("Booking number", "#" + b.id)}
+                ${row("Service", DS.esc(b.service) + " &middot; " + DS.esc(b.providerName || p.name))}
+                ${row("Date and time", DS.niceDate(b.date) + " at " + DS.niceTime(b.time))}
+                ${row("Duration", b.hours + (b.hours > 1 ? " hours" : " hour"))}
+                ${row("Address", DS.esc(b.address))}
+                ${row("Total", "<strong>" + DS.money(b.amount) + "</strong>")}
+                ${row("Payment", "Pay after the job is done (online or cash)")}
+                ${row("Status", '<span class="badge-status st-' + DS.esc(b.status) + '">' + DS.esc(b.status) + "</span> <small class=\"text-muted ms-1\">Waiting for the provider to accept</small>")}
+              </tbody></table>
+              <div class="d-grid gap-2">
+                <a href="my-bookings.html" class="btn btn-primary">View My Bookings</a>
+                <a href="providers.html" class="btn btn-outline-secondary">Book another service</a>
+              </div>
+            </div>
+          </div></div>
+        </div>`);
+      bootstrap.Modal.getOrCreateInstance($("bookingDoneModal")).show();
+    }
+
     $("bookingForm").addEventListener("submit", async e => {
       e.preventDefault();
+      const oldMessage = $("bookingAlert");
+      if (oldMessage) oldMessage.remove();
       let ok = true;
       function check(id, valid) {
         $(id).classList.toggle("is-invalid", !valid);
@@ -70,7 +121,10 @@
       $("dateMsg").textContent = !dateOk ? "Choose today or a future date." : "This provider does not work on that day.";
       check("date", dateOk && dayOk);
       check("time", $("time").value !== "");
-      if (!ok) return;
+      if (!ok) {
+        showFormMessage("Your booking was not sent. Please correct the highlighted fields and try again.", "warning");
+        return;
+      }
 
       const button = e.submitter || $("bookingForm").querySelector("[type=submit]");
       if (button) button.disabled = true;
@@ -84,11 +138,11 @@
           address: $("address").value.trim(),
           notes: $("notes").value.trim()
         });
-        location.href = "my-bookings.html?msg=" + encodeURIComponent("Booking sent to the provider. You pay after the job is done.");
+        showBookingSuccess(booking);          // the button stays off, so the same booking cannot be sent twice
       } catch (err) {
         if (err.fields && err.fields.time) { $("time").classList.add("is-invalid"); }
         if (err.fields && err.fields.date) { $("dateMsg").textContent = err.fields.date; $("date").classList.add("is-invalid"); }
-        DS.toast(err.message, "danger");
+        showFormMessage("Your booking was not sent. " + (err.message || "Please check your connection and try again."), "danger");
         if (button) button.disabled = false;
       }
     });
