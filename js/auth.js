@@ -60,10 +60,10 @@ if (loginForm) {
         client_id: clientId,
         callback: async response => {
           try {
-            const res = await API.post("/google-login", { credential: response.credential });   // POST /api/google-login
+            const res = await API.post("/google-login", { credential: response.credential , role: document.querySelector("input[name=role]:checked").value });   // POST /api/google-login
             API.saveSession(res.token, res.user);
             DS.login(res.user);
-            location.href = DS.base + (res.created ? "customer/profile.html?welcome=1" : HOME_PAGE[res.user.role]);
+            location.href = DS.base + HOME_PAGE[res.user.role];          
           } catch (err) {
             showAlert("loginAlert", err.message, "danger");
           }

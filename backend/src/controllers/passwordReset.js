@@ -6,7 +6,7 @@
 // Only a hash (fingerprint) of the secret is stored in the database, so a leaked database cannot be used to take over accounts.
 
 const crypto = require('node:crypto');
-const { findAccountByEmail } = require('./auth');
+const { findAccountsByEmail } = require('./auth');
 const { TABLES } = require('../db/queries');
 const { hashPassword } = require('../utils/password');
 const { str, isEmail, isStrongPassword, Validator } = require('../utils/validate');
@@ -22,29 +22,31 @@ async function forgotPassword(db, config, input = {}, now = new Date(), log = co
   const email = str(input.email).toLowerCase();
   if (!isEmail(email)) throw new AppError(400, 'Please enter a valid email address.', { email: 'Enter a valid email address.' });
 
-  const found = await findAccountByEmail(db, email);
-  if (!found || found.row.is_suspended) return SAME_ANSWER;
+  // One email can own a Customer account and a Provider account: each gets its own link (and its own email),
+  // and each link changes the password of that one account only.
+  for (const found of await findAccountsByEmail(db, email)) {
+    if (found.row.is_suspended) continue;
+    const { idColumn } = TABLES[found.role];
+    const accountId = found.row[idColumn];
+    const secret = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(now.getTime() + LINK_MINUTES * 60 * 1000);
 
-  const { idColumn } = TABLES[found.role];
-  const accountId = found.row[idColumn];
-  const secret = crypto.randomBytes(32).toString('hex');
-  const expires = new Date(now.getTime() + LINK_MINUTES * 60 * 1000);
+    await db.transaction(async tx => {
+      await tx.run('DELETE FROM password_resets WHERE role = ? AND account_id = ?', [found.role, accountId]);   // older links stop working
+      await tx.run('INSERT INTO password_resets (role, account_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        [found.role, accountId, sha256(secret), nowSql(expires), nowSql(now)]);
+    });
 
-  await db.transaction(async tx => {
-    await tx.run('DELETE FROM password_resets WHERE role = ? AND account_id = ?', [found.role, accountId]);   // older links stop working
-    await tx.run('INSERT INTO password_resets (role, account_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
-      [found.role, accountId, sha256(secret), nowSql(expires), nowSql(now)]);
-  });
-
-  const link = `${config.mail.siteUrl}/reset-password.html?token=${secret}`;
-  // Sent in the background, so the answer takes the same time whether or not the email exists.
-  Promise.resolve(mailer.send(config, {
-    to: found.row.email,
-    subject: 'Reset your Druk Serve password',
-    text: `Hello ${found.row.name},\n\nSomebody asked to reset the password of your Druk Serve account.\n` +
-      `Open this link to choose a new password (it works once, for ${LINK_MINUTES} minutes):\n\n${link}\n\n` +
-      'If you did not ask for this, ignore this email. Your password stays the same.\n\nDruk Serve'
-  })).catch(e => log('Could not send the reset email:', e.message));
+    const link = `${config.mail.siteUrl}/reset-password.html?token=${secret}`;
+    // Sent in the background, so the answer takes about the same time whether or not the email exists.
+    Promise.resolve(mailer.send(config, {
+      to: found.row.email,
+      subject: `Reset your Druk Serve ${found.role} password`,
+      text: `Hello ${found.row.name},\n\nSomebody asked to reset the password of your Druk Serve ${found.role} account.\n` +
+        `Open this link to choose a new password (it works once, for ${LINK_MINUTES} minutes):\n\n${link}\n\n` +
+        'If you did not ask for this, ignore this email. Your password stays the same.\n\nDruk Serve'
+    })).catch(e => log('Could not send the reset email:', e.message));
+  }
   return SAME_ANSWER;
 }
 

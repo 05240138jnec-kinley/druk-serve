@@ -13,7 +13,7 @@ const { createHandler } = require('../src/http/handler');
 const { ROUTES } = require('../src/http/routes');
 const dates = require('../src/utils/dates');
 
-const config = { jwtSecret: 'a-test-secret-that-is-long-enough-for-hs256', jwtExpiresInSeconds: 3600 };
+const config = { jwtSecret: 'a-test-secret-that-is-long-enough-for-hs256', jwtExpiresInSeconds: 3600, mail: { siteUrl: 'http://127.0.0.1:5500' }, googleClientId: 'test-client.apps.googleusercontent.com' };
 
 function futureDate(weekdayWanted, minDaysAhead = 2) {
   const [y, m, d] = dates.todayISO().split('-').map(Number);
@@ -22,6 +22,9 @@ function futureDate(weekdayWanted, minDaysAhead = 2) {
     if (dt.getUTCDay() === weekdayWanted) return dt.toISOString().slice(0, 10);
   }
 }
+
+const os = require('node:os');
+process.env.UPLOAD_DIR = require('node:fs').mkdtempSync(require('node:path').join(os.tmpdir(), 'ds-uploads-'));
 
 test('Druk Serve HTTP API', { skip: !available && 'node:sqlite needs Node 22.5 or newer' }, async t => {
   const db = createSqliteDb();
@@ -224,18 +227,11 @@ test('Druk Serve HTTP API', { skip: !available && 'node:sqlite needs Node 22.5 o
     assert.match(notes[0].text, /Kinley Tshering requested a cleaning job/);
     assert.equal(ok(await call('GET', '/api/notifications/unread-count', { token: newProvider.token })).count, 2);
 
-    // payment: invalid method, then pay online
+    // payment: invalid method, not your booking, and too early (pay AFTER the work is done)
     assert.equal((await call('POST', '/api/payments', { token: kinley.token, body: { bookingId, method: 'Bitcoin' } })).status, 400);
     assert.equal((await call('POST', '/api/payments', { token: pema.token, body: { bookingId, method: 'mPay' } })).status, 404, 'not your booking');
-    const paid = ok(await call('POST', '/api/payments', { token: kinley.token, body: { bookingId, method: 'mPay' } }));
-    assert.equal(paid.paid, true);
-    assert.equal(paid.payMethod, 'mPay');
-    assert.match(paid.txn, /^DS\d{8}$/);
-    assert.equal((await call('POST', '/api/payments', { token: kinley.token, body: { bookingId, method: 'mPay' } })).status, 409, 'cannot pay twice');
-
-    const history = ok(await call('GET', '/api/payments', { token: kinley.token }));
-    assert.equal(history.length, 1);
-    assert.equal(history[0].amount, 600);
+    assert.equal((await call('POST', '/api/payments', { token: kinley.token, body: { bookingId, method: 'mPay' } })).status, 409, 'cannot pay before the job is finished');
+    assert.equal(ok(await call('GET', '/api/payments', { token: kinley.token })).length, 0);
   });
 
   await t.test('journey 3: provider accepts and completes, customer cannot do the provider\'s steps', async () => {
@@ -250,10 +246,27 @@ test('Druk Serve HTTP API', { skip: !available && 'node:sqlite needs Node 22.5 o
 
     assert.equal(ok(await call('PUT', `/api/bookings/${bookingId}`, { token: newProvider.token, body: { status: 'Completed' } })).status, 'Completed');
 
-    const earn = ok(await call('GET', '/api/provider/payments', { token: newProvider.token }));
+    // finished but not paid yet: nothing counted as earned, 600 is awaiting payment
+    let earn = ok(await call('GET', '/api/provider/payments', { token: newProvider.token }));
+    assert.equal(earn.total, 0);
+    assert.equal(earn.awaiting, 600);
+
+    // now the customer pays (online)
+    assert.equal((await call('POST', '/api/payments', { token: kinley.token, body: { bookingId, method: 'Bitcoin' } })).status, 400);
+    const paid = ok(await call('POST', '/api/payments', { token: kinley.token, body: { bookingId, method: 'mPay' } }));
+    assert.equal(paid.paid, true);
+    assert.equal(paid.payMethod, 'mPay');
+    assert.match(paid.txn, /^DS\d{8}$/);
+    assert.equal((await call('POST', '/api/payments', { token: kinley.token, body: { bookingId, method: 'mPay' } })).status, 409, 'cannot pay twice');
+    const history = ok(await call('GET', '/api/payments', { token: kinley.token }));
+    assert.equal(history.length, 1);
+    assert.equal(history[0].amount, 600);
+
+    earn = ok(await call('GET', '/api/provider/payments', { token: newProvider.token }));
     assert.equal(earn.total, 600);
     assert.equal(earn.online, 600);
     assert.equal(earn.cash, 0);
+    assert.equal(earn.awaiting, 0);
     assert.equal(earn.payments.length, 1);
 
     // the customer was told at each step
@@ -282,6 +295,24 @@ test('Druk Serve HTTP API', { skip: !available && 'node:sqlite needs Node 22.5 o
     assert.equal(profile.reviews, 1);
     assert.equal(profile.reviewList[0].reply, 'Thank you!');
 
+    // notification details: the review, the booking and the provider's name behind each message
+    const feed = ok(await call('GET', '/api/notifications', { token: kinley.token }));
+    const replied = feed.find(n => n.title === 'Provider Replied');
+    assert.equal(replied.relatedType, 'feedback');
+    const detail = ok(await call('GET', `/api/notifications/${replied.id}`, { token: kinley.token }));
+    assert.equal(detail.related.type, 'feedback');
+    assert.equal(detail.related.feedback.reply, 'Thank you!');
+    assert.equal(detail.related.feedback.comment, 'Very clean, thank you.');
+    assert.equal(detail.related.booking.providerName, newProvider.user.name);
+    assert.match(detail.when.date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.match(detail.when.time, /^\d{2}:\d{2}$/);
+    assert.equal((await call('GET', `/api/notifications/${replied.id}`, { token: newProvider.token })).status, 404, "not someone else's");
+    assert.equal((await call('GET', `/api/notifications/${replied.id}`)).status, 401, 'login needed');
+    const done = feed.find(n => n.title === 'Job Completed');
+    assert.equal(ok(await call('GET', `/api/notifications/${done.id}`, { token: kinley.token })).related.booking.id, bookingId);
+    const newFb = ok(await call('GET', '/api/notifications', { token: newProvider.token })).find(n => n.title === 'New Feedback');
+    assert.equal(ok(await call('GET', `/api/notifications/${newFb.id}`, { token: newProvider.token })).related.feedback.rating, 4);
+
     // notifications: read one, read all, clear all (each person has their own)
     const list = ok(await call('GET', '/api/notifications', { token: kinley.token }));
     assert.ok(list.some(n => n.read === false));
@@ -297,13 +328,119 @@ test('Druk Serve HTTP API', { skip: !available && 'node:sqlite needs Node 22.5 o
   await t.test('cancel: the customer cancels, the provider is told', async () => {
     const date = futureDate(4);
     const b = ok(await call('POST', '/api/bookings', { token: kinley.token, body: { providerId, date, time: '09:00', hours: 1, address: 'Main Street, Paro' } }), 201);
-    const cash = ok(await call('POST', '/api/payments', { token: kinley.token, body: { bookingId: b.id, method: 'Cash' } }));
-    assert.equal(cash.payMethod, 'Cash');
-    assert.equal(cash.paid, false);
+    assert.equal((await call('POST', '/api/payments', { token: kinley.token, body: { bookingId: b.id, method: 'Cash' } })).status, 409, 'not finished, so not payable');
     assert.equal(ok(await call('PUT', `/api/bookings/${b.id}`, { token: kinley.token, body: { status: 'Cancelled' } })).status, 'Cancelled');
     assert.equal((await call('POST', '/api/payments', { token: kinley.token, body: { bookingId: b.id, method: 'mPay' } })).status, 409, 'cancelled bookings cannot be paid');
     assert.equal((await call('PUT', `/api/bookings/${b.id}`, { token: kinley.token, body: { status: 'Cancelled' } })).status, 409, 'cannot cancel twice');
     assert.ok(ok(await call('GET', '/api/notifications', { token: newProvider.token })).some(n => n.title === 'Booking Cancelled'));
+  });
+
+  await t.test('profile photo: saved as a file, path kept in the database, JPG/PNG/WEBP only', async () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const url = (type, bytes) => `data:image/${type};base64,` + Buffer.from(bytes).toString('base64');
+    const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0];
+    const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13];
+    const WEBP = [...Buffer.from('RIFF'), 4, 0, 0, 0, ...Buffer.from('WEBPVP8 ')];
+    const fileOf = u => path.join(process.env.UPLOAD_DIR, 'avatars', path.basename(u));
+
+    assert.equal(ok(await call('GET', '/api/profile', { token: kinley.token })).photo, null, 'default: no photo');
+    const bad = {
+      empty: '', text: 'hello', svg: 'data:image/svg+xml;base64,PHN2Zy8+', gif: url('gif', JPG),
+      fake: url('png', JPG), notReal: url('jpeg', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]),
+      big: 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from(JPG), Buffer.alloc(2.5 * 1024 * 1024)]).toString('base64'),
+      script: 'data:image/jpeg;base64,/9j/"><script>'
+    };
+    for (const [name, photo] of Object.entries(bad)) {
+      const r = await call('PUT', '/api/profile/photo', { token: kinley.token, body: { photo } });
+      if (name === 'fake') { assert.equal(r.status, 200, 'png label on a jpeg file is still a real picture'); continue; }
+      assert.equal(r.status, 400, name);
+      assert.ok(r.body.fields.photo, name);
+    }
+    ok(await call('DELETE', '/api/profile/photo', { token: kinley.token }));
+    assert.equal((await call('PUT', '/api/profile/photo', { body: { photo: url('jpeg', JPG) } })).status, 401);
+    assert.equal((await call('PUT', '/api/profile/photo', { token: admin.token, body: { photo: url('jpeg', JPG) } })).status, 403);
+
+    // upload: a real file appears and the profile, login and provider lists show its path
+    const first = ok(await call('PUT', '/api/profile/photo', { token: kinley.token, body: { photo: url('jpeg', JPG) } })).photo;
+    assert.match(first, /^\/uploads\/avatars\/customer-\d+-[0-9a-f]{12}\.jpg$/);
+    assert.ok(fs.existsSync(fileOf(first)));
+    assert.deepEqual([...fs.readFileSync(fileOf(first))], JPG, 'the saved file is the uploaded picture');
+    assert.equal(ok(await call('GET', '/api/profile', { token: kinley.token })).photo, first, 'still there on the next visit');
+    assert.equal(ok(await call('GET', '/api/profile', { token: newProvider.token })).photo, null, 'each person has their own');
+    const again = await call('POST', '/api/login', { body: { email: 'kinley@example.bt', password: 'Test@1234', role: 'customer' } });
+    assert.equal(again.body.user.photo, first, 'login brings the photo back');
+
+    // replace (png) deletes the old file; webp works too
+    const second = ok(await call('PUT', '/api/profile/photo', { token: kinley.token, body: { photo: url('png', PNG) } })).photo;
+    assert.match(second, /\.png$/);
+    assert.ok(!fs.existsSync(fileOf(first)), 'the old file was removed');
+    const third = ok(await call('PUT', '/api/profile/photo', { token: kinley.token, body: { photo: url('webp', WEBP) } })).photo;
+    assert.match(third, /\.webp$/);
+
+    // provider photo is public, customer photo is not part of any public data
+    const pPhoto = ok(await call('PUT', '/api/profile/photo', { token: newProvider.token, body: { photo: url('jpeg', JPG) } })).photo;
+    assert.equal(ok(await call('GET', `/api/providers/${providerId}`)).photo, pPhoto);
+    assert.equal(ok(await call('GET', '/api/providers')).find(p => p.id === providerId).photo, pPhoto);
+    assert.equal(ok(await call('PUT', '/api/profile', { token: newProvider.token, body: { name: newProvider.user.name, phone: '17000000', location: 'Thimphu' } })).photo, pPhoto, 'editing the profile keeps the photo');
+
+    // remove
+    assert.equal(ok(await call('DELETE', '/api/profile/photo', { token: newProvider.token })).photo, null);
+    assert.ok(!fs.existsSync(fileOf(pPhoto)));
+    assert.equal(ok(await call('GET', `/api/providers/${providerId}`)).photo, null);
+    ok(await call('DELETE', '/api/profile/photo', { token: kinley.token }));
+    assert.deepEqual(fs.readdirSync(path.join(process.env.UPLOAD_DIR, 'avatars')), [], 'no files left behind');
+  });
+
+  await t.test('forgot password: emailed one-time link, 30 minutes, same answer for every email', async () => {
+    const mailer = require('../src/utils/mailer');
+    const outbox = [];
+    mailer.setTransport(async m => { outbox.push(m); });
+    t.after(() => mailer.setTransport(null));
+    const tokenOf = mail => /reset-password\.html\?token=([0-9a-f]{64})/.exec(mail.text)[1];
+    const forgot = email => call('POST', '/api/forgot-password', { body: { email } });
+    const reset = (token, newPassword) => call('POST', '/api/reset-password', { body: { token, newPassword } });
+
+    assert.equal((await forgot('not-an-email')).status, 400);
+    const unknown = await forgot('nobody@example.bt');
+    assert.equal(unknown.status, 200);
+    assert.equal(outbox.length, 0, 'no email for an unknown address');
+    const known = await forgot('customer@drukserve.bt');
+    assert.deepEqual(known.body, unknown.body, 'the answer never reveals whether the email exists');
+    assert.equal(outbox.length, 1);
+    assert.equal(outbox[0].to, 'customer@drukserve.bt');
+    assert.match(outbox[0].text, /^.*http:\/\/127\.0\.0\.1:5500\/reset-password\.html\?token=/m);
+    const token = tokenOf(outbox[0]);
+    const stored = await db.get('SELECT token_hash FROM password_resets');
+    assert.notEqual(stored.token_hash, token, 'only a hash of the secret is stored');
+
+    // refused: weak password, wrong token
+    assert.ok((await reset(token, 'abc')).body.fields.newPassword);
+    assert.equal((await reset('abc', 'Reset@1234')).status, 400);
+    assert.equal((await reset('0'.repeat(64), 'Reset@1234')).status, 400);
+
+    // a newer request replaces the older link
+    await forgot('customer@drukserve.bt');
+    assert.equal(outbox.length, 2);
+    assert.equal((await reset(token, 'Reset@1234')).status, 400, 'the old link no longer works');
+
+    // an expired link
+    const late = tokenOf(outbox[1]);
+    clockMs += 31 * 60 * 1000;
+    assert.equal((await reset(late, 'Reset@1234')).status, 400, 'expired after 30 minutes');
+    clockMs -= 31 * 60 * 1000;
+
+    // a suspended account gets no email
+    ok(await call('PUT', `/api/admin/users/customer/${pema.user.id}/status`, { token: admin.token, body: { suspended: true } }));
+    await forgot('customer@drukserve.bt');
+    assert.equal(outbox.length, 2);
+    ok(await call('PUT', `/api/admin/users/customer/${pema.user.id}/status`, { token: admin.token, body: { suspended: false } }));
+
+    // the good link works once
+    assert.equal((await reset(late, 'Reset@1234')).status, 200);
+    assert.equal((await call('POST', '/api/login', { body: { email: 'customer@drukserve.bt', password: 'Customer@123', role: 'customer' } })).status, 401, 'old password is gone');
+    assert.equal((await call('POST', '/api/login', { body: { email: 'customer@drukserve.bt', password: 'Reset@1234', role: 'customer' } })).status, 200);
+    assert.equal((await reset(late, 'Another@1234')).status, 400, 'a link works only once');
   });
 
   await t.test('profile and password', async () => {
@@ -367,6 +504,100 @@ test('Druk Serve HTTP API', { skip: !available && 'node:sqlite needs Node 22.5 o
     assert.equal((await call('DELETE', `/api/admin/categories/${plumbing.id}`, { token: admin.token })).status, 409, 'in use');
     ok(await call('DELETE', `/api/admin/categories/${cat.id}`, { token: admin.token }));
     assert.equal((await call('DELETE', `/api/admin/categories/${cat.id}`, { token: admin.token })).status, 404);
+  });
+
+  await t.test('google sign-in: only logs in existing accounts, by role; one email can be a customer AND a provider', async () => {
+    const googleAuth = require('../src/utils/googleAuth');
+    let google = null;                                   // what the fake "Google" says about the token
+    googleAuth.setVerifier(async credential => { if (credential === 'bad') throw new Error('bad token'); return google; });
+    t.after(() => googleAuth.setVerifier(null));
+    const go = (credential, role) => call('POST', '/api/google-login', { body: { credential, role } });
+    const countCustomers = async () => ok(await call('GET', '/api/admin/users', { token: admin.token, query: { role: 'customer' } })).length;
+
+    assert.equal(ok(await call('GET', '/api/auth-config')).googleClientId, config.googleClientId);
+    assert.equal((await go('', 'customer')).status, 400);
+    assert.equal((await go('x', undefined)).status, 400, 'a role is needed');
+    assert.equal((await go('bad', 'customer')).status, 401, 'a token Google does not accept');
+    google = { email: 'tashi@gmail.com', email_verified: false, name: 'Tashi Dorji' };
+    assert.equal((await go('x', 'customer')).status, 401, 'unverified email');
+
+    // Google can NOT register anybody
+    const before = await countCustomers();
+    google = { email: 'Tashi@Gmail.com', email_verified: true, name: 'Tashi Dorji' };
+    const refused = await go('x', 'customer');
+    assert.equal(refused.status, 404);
+    assert.match(refused.body.error, /register first/i);
+    assert.equal((await go('x', 'provider')).status, 404);
+    assert.equal(await countCustomers(), before, 'no account was created');
+
+    // register normally (customer), then Google logs in
+    ok(await call('POST', '/api/register', { body: { role: 'customer', name: 'Tashi Dorji', email: 'tashi@gmail.com', phone: '17123456', address: 'Thimphu town', password: 'Test@1234' } }), 201);
+    const viaGoogle = ok(await go('x', 'customer'));
+    assert.equal(viaGoogle.user.role, 'customer');
+    assert.equal(viaGoogle.user.email, 'tashi@gmail.com');
+    assert.equal(viaGoogle.created, undefined);
+    assert.equal(ok(await call('GET', '/api/me', { token: viaGoogle.token })).user.id, viaGoogle.user.id, 'the token works');
+
+    // the customer has no provider account yet: the message points to the right choice
+    const wrongRole = await go('x', 'provider');
+    assert.equal(wrongRole.status, 404);
+    assert.match(wrongRole.body.error, /no Provider account/i);
+    assert.match(wrongRole.body.error, /Customer/);
+
+    // the SAME email now registers as a provider too (own password, own account)
+    ok(await call('POST', '/api/register', { body: { role: 'provider', name: 'Tashi Dorji', email: 'tashi@gmail.com', phone: '17123456', category: 'Plumbing', rate: 300, password: 'Prov@12345' } }), 201);
+    const dup = await call('POST', '/api/register', { body: { role: 'provider', name: 'Tashi Dorji', email: 'tashi@gmail.com', phone: '17123456', category: 'Plumbing', rate: 300, password: 'Prov@12345' } });
+    assert.equal(dup.status, 409, 'the same email cannot be a provider twice');
+    assert.match(dup.body.error, /already registered as a provider/);
+    const cust = ok(await go('x', 'customer'));
+    const prov = ok(await go('x', 'provider'));
+    assert.equal(cust.user.role, 'customer');
+    assert.equal(prov.user.role, 'provider');
+    assert.notEqual(prov.token, cust.token);
+    assert.equal(ok(await call('GET', '/api/me', { token: prov.token })).user.role, 'provider');
+    assert.equal(prov.user.providerId, prov.user.id);
+
+    // password login picks the account by role, each with its own password
+    const pwLogin = (password, role) => call('POST', '/api/login', { body: { email: 'tashi@gmail.com', password, role } });
+    assert.equal(ok(await pwLogin('Test@1234', 'customer')).user.id, cust.user.id);
+    assert.equal(ok(await pwLogin('Prov@12345', 'provider')).user.id, prov.user.id);
+    assert.equal((await pwLogin('Prov@12345', 'customer')).status, 401, 'provider password does not open the customer account');
+    assert.equal((await pwLogin('Test@1234', 'provider')).status, 401, 'customer password does not open the provider account');
+
+    // forgot password: one link per account, each changes only its own account
+    const sent = [];
+    require('../src/utils/mailer').setTransport(async mail => { sent.push(mail); });
+    t.after(() => require('../src/utils/mailer').setTransport(null));
+    ok(await call('POST', '/api/forgot-password', { body: { email: 'tashi@gmail.com' } }));
+    await new Promise(r => setTimeout(r, 20));
+    assert.equal(sent.length, 2, 'two accounts, two emails');
+    const customerMail = sent.find(m => /customer account/.test(m.text));
+    const providerMail = sent.find(m => /provider account/.test(m.text));
+    const tokenOf = m => m.text.match(/token=([0-9a-f]{64})/)[1];
+    ok(await call('POST', '/api/reset-password', { body: { token: tokenOf(providerMail), newPassword: 'Newer@12345' } }));
+    assert.equal(ok(await pwLogin('Newer@12345', 'provider')).user.id, prov.user.id);
+    assert.equal(ok(await pwLogin('Test@1234', 'customer')).user.id, cust.user.id, 'customer password unchanged');
+    assert.ok(tokenOf(customerMail));
+
+    // an existing provider logs in as a provider; admin never
+    google = { email: 'provider@drukserve.bt', email_verified: true, name: 'Sonam Dorji' };
+    assert.equal(ok(await go('x', 'provider')).user.role, 'provider');
+    assert.equal((await go('x', 'customer')).status, 404);
+    google = { email: 'admin@drukserve.bt', email_verified: true, name: 'Admin' };
+    assert.equal((await go('x', 'admin')).status, 403, 'admin must use email and password');
+    assert.equal((await go('x', 'customer')).status, 404, 'the admin email is not a customer');
+
+    ok(await call('PUT', `/api/admin/users/customer/${cust.user.id}/status`, { token: admin.token, body: { suspended: true } }));
+    google = { email: 'tashi@gmail.com', email_verified: true, name: 'Tashi Dorji' };
+    assert.equal((await go('x', 'customer')).status, 403, 'suspended customer account');
+    assert.equal(ok(await go('x', 'provider')).user.role, 'provider', 'the provider account is separate and still works');
+    ok(await call('PUT', `/api/admin/users/customer/${cust.user.id}/status`, { token: admin.token, body: { suspended: false } }));
+
+    const saved = config.googleClientId;
+    config.googleClientId = '';
+    assert.equal((await go('x', 'customer')).status, 503, 'switched off when there is no Client ID');
+    assert.equal(ok(await call('GET', '/api/auth-config')).googleClientId, null);
+    config.googleClientId = saved;
   });
 
   await t.test('every address in routes.js was used by these tests', () => {

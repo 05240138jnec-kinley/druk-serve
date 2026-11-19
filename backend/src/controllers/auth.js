@@ -15,13 +15,24 @@ const { badRequest, unauthorized, forbidden, conflict, isDuplicateError } = requ
 
 const ROLE_ORDER = ['customer', 'provider', 'admin'];
 
-// Look for an email in all three account tables. Returns { role, row } or null.
-async function findAccountByEmail(db, email) {
+// The SAME email may own one Customer account and one Service Provider account (two separate accounts, two passwords).
+// So an email alone does not identify an account: the email AND the role do.
+
+// The account of this email in ONE role. Returns { role, row } or null.
+async function findAccount(db, email, role) {
+  if (!TABLES[role]) return null;
+  const row = await db.get(`SELECT * FROM ${TABLES[role].table} WHERE email = ?`, [email]);
+  return row ? { role, row } : null;
+}
+
+// Every account that uses this email (0 to 3 of them). Returns [{ role, row }].
+async function findAccountsByEmail(db, email) {
+  const all = [];
   for (const role of ROLE_ORDER) {
-    const row = await db.get(`SELECT * FROM ${TABLES[role].table} WHERE email = ?`, [email]);
-    if (row) return { role, row };
+    const found = await findAccount(db, email, role);
+    if (found) all.push(found);
   }
-  return null;
+  return all;
 }
 
 // The small object the frontend keeps as its "session" (same fields as DS.login in js/app.js).
@@ -75,8 +86,12 @@ async function register(db, input = {}) {
   }
   v.throwIfInvalid();
 
-  if (await findAccountByEmail(db, email)) {
-    throw conflict('This email is already registered.', { email: 'This email is already registered.' });
+  // Taken only if the same email already has an account in THIS role (or belongs to the admin).
+  // A customer email may still register as a provider, and the other way round.
+  const taken = (await findAccount(db, email, role)) || (await findAccount(db, email, 'admin'));
+  if (taken) {
+    const msg = taken.role === role ? `This email is already registered as a ${role}.` : 'This email is already registered.';
+    throw conflict(msg, { email: msg });
   }
 
   const passwordHash = await hashPassword(input.password);   // the real password is never saved
@@ -118,20 +133,27 @@ async function login(db, input = {}) {
     throw badRequest('Please enter your email, password and role.');
   }
 
-  const found = await findAccountByEmail(db, email);
+  const accounts = await findAccountsByEmail(db, email);
+  const found = accounts.find(a => a.role === role) || null;      // the account of the role chosen on the login page
   const passwordOk = await verifyPassword(password, found ? found.row.password_hash : await dummyHash());
 
+  if (!found) {
+    // No account in this role. If the password fits the person's OTHER account, say which role to pick (they have proven who they are).
+    for (const other of accounts) {
+      if (await verifyPassword(password, other.row.password_hash) && !other.row.is_suspended) {
+        throw forbidden(`This email is registered as a ${other.role}. Please select "${capitalize(other.role)}" above.`);
+      }
+    }
+    throw unauthorized('Wrong email or password.');
+  }
   // ONE general message for "no such email" and "wrong password" (README: do not reveal which one).
-  if (!found || !passwordOk) throw unauthorized('Wrong email or password.');
+  if (!passwordOk) throw unauthorized('Wrong email or password.');
 
   // From here the person has proven they own the account, so specific messages are safe.
   if (found.row.is_suspended) throw forbidden('This account has been suspended. Please contact the admin.');
-  if (found.role !== role) {
-    throw forbidden(`This email is registered as a ${found.role}. Please select "${capitalize(found.role)}" above.`);
-  }
   const user = toSessionUser(found.role, found.row);
   const pic = await db.get('SELECT photo_url FROM profile_photos WHERE role = ? AND account_id = ?', [found.role, user.id]);
   return { ...user, photo: pic ? pic.photo_url : null };       // for the round picture in the top menu
 }
 
-module.exports = { findAccountByEmail, toSessionUser, loadAccount, register, login };
+module.exports = { findAccount, findAccountsByEmail, toSessionUser, loadAccount, register, login };

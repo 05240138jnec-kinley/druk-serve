@@ -55,8 +55,8 @@ test('Druk Serve journey', { skip: !available && 'node:sqlite needs Node 22.5 or
     const e = await auth.register(db, { role: 'customer', name: 'Al', email: 'bad', phone: '12', password: 'abc', address: 'x' }).catch(x => x);
     for (const f of ['name', 'email', 'phone', 'password', 'address']) assert.ok(e.fields[f], `missing message for ${f}`);
     await rejects(auth.register(db, { role: 'customer', name: 'Pema Two', email: 'CUSTOMER@drukserve.bt', phone: '17123456', address: 'Thimphu town', password: 'Test@1234' }), 409, 'email');
-    // an email used by a provider cannot be used by a customer either
-    await rejects(auth.register(db, { role: 'customer', name: 'Pema Two', email: 'provider@drukserve.bt', phone: '17123456', address: 'Thimphu town', password: 'Test@1234' }), 409, 'email');
+    // the admin's email can never be used for a new account
+    await rejects(auth.register(db, { role: 'customer', name: 'Pema Two', email: 'admin@drukserve.bt', phone: '17123456', address: 'Thimphu town', password: 'Test@1234' }), 409, 'email');
     await rejects(auth.register(db, { role: 'provider', name: 'New Plumber', email: 'np@x.bt', phone: '17123456', password: 'Test@1234', category: 'Nope', rate: 300 }), 400, 'category');
     await rejects(auth.register(db, { role: 'provider', name: 'New Plumber', email: 'np@x.bt', phone: '17123456', password: 'Test@1234', category: 'Plumbing', rate: 10 }), 400, 'rate');
   });
@@ -87,7 +87,7 @@ test('Druk Serve journey', { skip: !available && 'node:sqlite needs Node 22.5 or
 
   await t.test('login: one general message, role and suspension rules', async () => {
     const ok = await auth.login(db, { email: 'customer@drukserve.bt', password: 'Customer@123', role: 'customer' });
-    assert.deepEqual(ok, { id: 1, role: 'customer', name: 'Pema Choden', email: 'customer@drukserve.bt', providerId: null });
+    assert.deepEqual(ok, { id: 1, role: 'customer', name: 'Pema Choden', email: 'customer@drukserve.bt', providerId: null, photo: null });
     const prov = await auth.login(db, { email: 'provider@drukserve.bt', password: 'Provider@123', role: 'provider' });
     assert.equal(prov.providerId, 1);
     const adm = await auth.login(db, { email: 'admin@drukserve.bt', password: 'Admin@123', role: 'admin' });
@@ -192,30 +192,14 @@ test('Druk Serve journey', { skip: !available && 'node:sqlite needs Node 22.5 or
     await rejects(bookings.updateStatus(db, sonam, b1.id, 'Pending'), 400);
   });
 
-  await t.test('payment: online (sandbox), already paid, cash, cancelled', async () => {
+  await t.test('payment: not before the job is finished, cancelled bookings', async () => {
     await rejects(payments.pay(db, sandboxGateway, pema, { bookingId: b1.id, method: 'Bitcoin' }), 400);
     await rejects(payments.pay(db, sandboxGateway, { id: 2, role: 'customer', name: 'x' }, { bookingId: b1.id, method: 'mPay' }), 404);
+    await rejects(payments.pay(db, sandboxGateway, pema, { bookingId: b1.id, method: 'mPay' }), 409);   // pay AFTER the work is done
 
-    const paid = await payments.pay(db, sandboxGateway, pema, { bookingId: b1.id, method: 'mPay', amount: 1 });
-    assert.equal(paid.paid, true);
-    assert.equal(paid.payMethod, 'mPay');
-    assert.match(paid.txn, /^DS\d{8}$/);
-    assert.equal(paid.amount, 800);
-    assert.equal((await notifications.list(db, pema))[0].title, 'Payment');
-    assert.equal((await notifications.list(db, sonam))[0].title, 'Payment Received');
-    await rejects(payments.pay(db, sandboxGateway, pema, { bookingId: b1.id, method: 'mPay' }), 409);
-
-    // a failing gateway leaves the booking unpaid and shows "Pay Now" again
     const date2 = futureDate(2);
     const b2 = await bookings.create(db, pema, { providerId: 1, date: date2, time: '09:00', hours: 1, address: 'Norzin Lam, Thimphu' });
-    await rejects(payments.pay(db, liveGateway, pema, { bookingId: b2.id, method: 'BNB ePay' }), 402);
-    const after = await bookings.getOne(db, pema, b2.id);
-    assert.equal(after.paid, false);
-    assert.equal(after.payMethod, '');
-    // cash
-    const cash = await payments.pay(db, sandboxGateway, pema, { bookingId: b2.id, method: 'Cash' });
-    assert.equal(cash.payMethod, 'Cash');
-    assert.equal(cash.paid, false);
+    await rejects(payments.pay(db, sandboxGateway, pema, { bookingId: b2.id, method: 'Cash' }), 409);
     // cancelled bookings cannot be paid (seed booking 4)
     await rejects(payments.pay(db, sandboxGateway, pema, { bookingId: 4, method: 'mPay' }), 409);
     // customer cancels b2, provider is told
@@ -223,8 +207,6 @@ test('Druk Serve journey', { skip: !available && 'node:sqlite needs Node 22.5 or
     assert.equal(cancelled.status, 'Cancelled');
     assert.equal((await notifications.list(db, sonam))[0].title, 'Booking Cancelled');
     await rejects(bookings.updateStatus(db, pema, b2.id, 'Cancelled'), 409);
-    const history = await payments.listMine(db, pema);
-    assert.ok(history.some(h => h.bookingId === b1.id && h.status === 'Paid'));
   });
 
   await t.test('provider accepts, completes; customer rates; provider replies', async () => {
@@ -236,9 +218,24 @@ test('Druk Serve journey', { skip: !available && 'node:sqlite needs Node 22.5 or
 
     const completed = await bookings.updateStatus(db, sonam, b1.id, 'Completed');
     assert.equal(completed.status, 'Completed');
-    assert.equal(completed.payMethod, 'mPay', 'online payment is kept as it was');
+    assert.equal(completed.paid, false, 'completing does not pay: the customer pays after the work');
+    assert.equal(completed.payMethod, '');
     assert.equal((await notifications.list(db, pema))[0].title, 'Job Completed');
     await rejects(bookings.updateStatus(db, pema, b1.id, 'Cancelled'), 409);              // completed cannot be cancelled
+    assert.equal((await providers.earnings(db, sonam)).awaiting, 800);
+
+    // a failing gateway leaves the booking unpaid, then the customer pays online
+    await rejects(payments.pay(db, liveGateway, pema, { bookingId: b1.id, method: 'BNB ePay' }), 402);
+    assert.equal((await bookings.getOne(db, pema, b1.id)).paid, false);
+    const paid = await payments.pay(db, sandboxGateway, pema, { bookingId: b1.id, method: 'mPay', amount: 1 });
+    assert.equal(paid.paid, true);
+    assert.equal(paid.payMethod, 'mPay');
+    assert.match(paid.txn, /^DS\d{8}$/);
+    assert.equal(paid.amount, 800);
+    assert.equal((await notifications.list(db, pema))[0].title, 'Payment');
+    assert.equal((await notifications.list(db, sonam))[0].title, 'Payment Received');
+    await rejects(payments.pay(db, sandboxGateway, pema, { bookingId: b1.id, method: 'mPay' }), 409);
+    assert.ok((await payments.listMine(db, pema)).some(h => h.bookingId === b1.id && h.status === 'Paid'));
 
     await rejects(feedback.create(db, pema, { bookingId: b1.id, rating: 6 }), 400, 'rating');
     const before = (await providers.getMine(db, sonam));
@@ -272,15 +269,18 @@ test('Druk Serve journey', { skip: !available && 'node:sqlite needs Node 22.5 or
     assert.equal(st.totalEarnings, 800);
   });
 
-  await t.test('cash booking: becomes "Cash - Paid" when the provider completes the job', async () => {
+  await t.test('cash: the customer pays cash after the job is finished', async () => {
     const b = await bookings.create(db, pema, { providerId: 3, date: futureDate(3), time: '08:00', hours: 3, address: 'Norzin Lam, Thimphu' });
-    await payments.pay(db, sandboxGateway, pema, { bookingId: b.id, method: 'Cash' });
     const dechen = { id: 3, role: 'provider', name: 'Dechen Wangmo' };
     await bookings.updateStatus(db, dechen, b.id, 'Confirmed');
     const done = await bookings.updateStatus(db, dechen, b.id, 'Completed');
-    assert.equal(done.paid, true);
-    assert.equal(done.payMethod, 'Cash');
-    assert.equal((await providers.earnings(db, dechen)).cash, 750);
+    assert.equal(done.paid, false);
+    const before = await providers.earnings(db, dechen);
+    const cash = await payments.pay(db, sandboxGateway, pema, { bookingId: b.id, method: 'Cash' });
+    assert.equal(cash.paid, true);
+    assert.equal(cash.payMethod, 'Cash');
+    assert.equal((await providers.earnings(db, dechen)).cash, before.cash + 750);
+    assert.equal((await notifications.list(db, dechen))[0].title, 'Payment Received');
     // provider declines a pending request -> Cancelled + customer told
     const b3 = await bookings.create(db, pema, { providerId: 3, date: futureDate(4), time: '09:00', hours: 1, address: 'Norzin Lam, Thimphu' });
     await bookings.updateStatus(db, dechen, b3.id, 'Cancelled');

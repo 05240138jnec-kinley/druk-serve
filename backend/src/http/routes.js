@@ -54,9 +54,9 @@ const ROUTES = [
   { method: 'GET', path: '/api/auth-config', access: 'public', handler: ({ config }) => ({ googleClientId: config.googleClientId || null }) },
   { method: 'POST', path: '/api/google-login', access: 'public',
     handler: async ({ db, config, body, now }) => {
-      const { user, created } = await googleLogin.googleLogin(db, config, body);
+      const { user } = await googleLogin.googleLogin(db, config, body);
       const token = signToken({ sub: user.id, role: user.role }, config.jwtSecret, config.jwtExpiresInSeconds, now.getTime());
-      return { token, user, created };
+      return { token, user };
     } },
 
   // Forgot password: an email with a one-time link, then the new password (frontend forgot.html, reset-password.html)
