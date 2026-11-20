@@ -84,6 +84,9 @@ const ROUTES = [
 
   /* ---------- payments (frontend booking.js payment page) ---------- */
   { method: 'POST', path: '/api/payments', access: CUSTOMER, handler: ({ db, gateway, actor, body, now }) => payments.pay(db, gateway, actor, body, now) },
+  // The provider confirms that a customer's cash payment was really received (only then it becomes Paid)
+  { method: 'POST', path: '/api/payments/:bookingId/confirm-cash', access: PROVIDER,
+    handler: ({ db, actor, params, now }) => payments.confirmCash(db, actor, idOf(params.bookingId), now) },
   { method: 'GET', path: '/api/payments', access: CUSTOMER, handler: ({ db, actor }) => payments.listMine(db, actor) },
 
   /* ---------- feedback (frontend account.js, provider.js) ---------- */

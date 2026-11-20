@@ -173,6 +173,13 @@
       return;
     }
 
+    if (b.payMethod === "Cash") {          // already reported: waiting for the provider
+      $("paymentWrap").innerHTML = `<div class="card-ds empty-state"><i class="bi bi-hourglass-split"></i>
+        You told us you paid ${DS.money(b.amount)} in cash.<br>It will show as Paid after the provider confirms they received it.<br>
+        <a href="my-bookings.html" class="btn btn-primary mt-3">View My Bookings</a></div>`;
+      return;
+    }
+
     $("paySummary").innerHTML = `
       <h2 class="h5 fw-bold mb-3">Booking Summary</h2>
       <div class="d-flex align-items-center gap-3 mb-3">
@@ -190,7 +197,9 @@
       $("cashBox").classList.toggle("d-none", online);
       $("payBtn").innerHTML = online
         ? `<i class="bi bi-lock-fill me-1"></i>Pay ${DS.money(b.amount)}`
-        : `Confirm Cash Payment`;
+        : `I Paid in Cash`;
+      $("cashBox").innerHTML = `<i class="bi bi-info-circle me-1"></i>Pay the provider in cash, then tap the button. ` +
+        `Your payment shows as <strong>Paid</strong> only after the provider confirms that they received the cash.`;
     }
     document.querySelectorAll("input[name=payType]").forEach(r => r.addEventListener("change", refreshChoice));
     refreshChoice();
@@ -215,7 +224,7 @@
         if (online) {
           showSuccess("Payment successful!", "Reference " + done.txn + ". Thank you! Please rate the service from My Bookings.");
         } else {
-          showSuccess("Cash payment recorded!", "You paid " + DS.money(done.amount) + " in cash to the provider. Please rate the service from My Bookings.");
+          showSuccess("Cash payment reported", "You said you paid " + DS.money(done.amount) + " in cash. It will show as Paid after the provider confirms they received it. You can rate the service from My Bookings.");
         }
       } catch (err) {
         DS.toast(err.message, "danger");
@@ -251,6 +260,7 @@
 
     function payLabel(b) {
       if (b.paid) return `<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Paid via ${DS.esc(b.payMethod)}</span>`;
+      if (b.payMethod === "Cash") return `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Cash: waiting for provider to confirm</span>`;
       if (b.status === "Cancelled") return `<span class="text-muted">-</span>`;
       if (b.status === "Completed") return `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Payment due</span>`;
       return `<span class="text-muted"><i class="bi bi-clock me-1"></i>Pay after the job</span>`;
@@ -260,7 +270,7 @@
       const active = b.status === "Pending" || b.status === "Confirmed";
       const rated = b.rating !== null && b.rating !== undefined;
       let buttons = `<button class="btn btn-sm btn-outline-secondary" data-action="details" data-id="${b.id}">View Details</button>`;
-      if (b.status === "Completed" && !b.paid) buttons += `<a class="btn btn-sm btn-primary" href="payment.html?booking=${b.id}">Pay Now</a>`;
+      if (b.status === "Completed" && !b.paid && b.payMethod !== "Cash") buttons += `<a class="btn btn-sm btn-primary" href="payment.html?booking=${b.id}">Pay Now</a>`;
       if (active) buttons += `<button class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="${b.id}">Cancel</button>`;
       if (b.status === "Completed" && !rated) buttons += `<a class="btn btn-sm btn-accent" href="feedback.html?booking=${b.id}">Rate Service</a>`;
       if (rated) buttons += `<span class="align-self-center small">Your rating: ${DS.stars(b.rating)}</span>`;

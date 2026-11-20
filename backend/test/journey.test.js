@@ -277,10 +277,20 @@ test('Druk Serve journey', { skip: !available && 'node:sqlite needs Node 22.5 or
     assert.equal(done.paid, false);
     const before = await providers.earnings(db, dechen);
     const cash = await payments.pay(db, sandboxGateway, pema, { bookingId: b.id, method: 'Cash' });
-    assert.equal(cash.paid, true);
+    assert.equal(cash.paid, false, 'cash reported by the customer is NOT paid yet');
     assert.equal(cash.payMethod, 'Cash');
+    assert.equal((await providers.earnings(db, dechen)).cash, before.cash, 'no earnings until the provider confirms');
+    assert.equal((await notifications.list(db, dechen))[0].title, 'Confirm Cash Payment');
+    const count = (await notifications.list(db, dechen)).length;
+    await payments.pay(db, sandboxGateway, pema, { bookingId: b.id, method: 'Cash' });          // pressing it again changes nothing
+    assert.equal((await notifications.list(db, dechen)).length, count);
+
+    await rejects(payments.confirmCash(db, { id: 4, role: 'provider', name: 'Other' }, b.id), 404);   // not their job
+    const paid = await payments.confirmCash(db, dechen, b.id);
+    assert.equal(paid.paid, true);
     assert.equal((await providers.earnings(db, dechen)).cash, before.cash + 750);
-    assert.equal((await notifications.list(db, dechen))[0].title, 'Payment Received');
+    assert.equal((await notifications.list(db, pema))[0].title, 'Cash Payment Confirmed');
+    await rejects(payments.confirmCash(db, dechen, b.id), 409);                                  // already paid
     // provider declines a pending request -> Cancelled + customer told
     const b3 = await bookings.create(db, pema, { providerId: 3, date: futureDate(4), time: '09:00', hours: 1, address: 'Norzin Lam, Thimphu' });
     await bookings.updateStatus(db, dechen, b3.id, 'Cancelled');

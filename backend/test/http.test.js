@@ -600,6 +600,25 @@ test('Druk Serve HTTP API', { skip: !available && 'node:sqlite needs Node 22.5 o
     config.googleClientId = saved;
   });
 
+  await t.test('cash payment: completing a job does not pay it; the provider confirms the cash', async () => {
+    const b = ok(await call('POST', '/api/bookings', { token: kinley.token, body: { providerId, date: futureDate(2), time: '13:00', hours: 1, address: 'Main Street, Paro' } }), 201);
+    const confirm = token => call('POST', `/api/payments/${b.id}/confirm-cash`, { token });
+    ok(await call('PUT', `/api/bookings/${b.id}`, { token: newProvider.token, body: { status: 'Confirmed' } }));
+    const completed = ok(await call('PUT', `/api/bookings/${b.id}`, { token: newProvider.token, body: { status: 'Completed' } }));
+    assert.equal(completed.paid, false, 'completing the job does not mark it as paid');
+    assert.equal(completed.payMethod, '', 'no payment yet');
+    assert.equal((await confirm(newProvider.token)).status, 409, 'nothing to confirm yet');
+
+    const reported = ok(await call('POST', '/api/payments', { token: kinley.token, body: { bookingId: b.id, method: 'Cash' } }));
+    assert.equal(reported.paid, false, 'the customer saying "I paid cash" is not enough');
+    assert.equal((await confirm(kinley.token)).status, 403, 'a customer cannot confirm cash');
+    assert.equal((await confirm(sonam.token)).status, 404, 'another provider cannot confirm it');
+    const confirmed = ok(await confirm(newProvider.token));
+    assert.equal(confirmed.paid, true);
+    assert.equal(confirmed.payMethod, 'Cash');
+    assert.equal((await confirm(newProvider.token)).status, 409, 'only once');
+  });
+
   await t.test('every address in routes.js was used by these tests', () => {
     const missing = ROUTES.map(r => `${r.method} ${r.path}`).filter(r => !used.has(r));
     assert.deepEqual(missing, [], `these addresses were never tested: ${missing.join(', ')}`);

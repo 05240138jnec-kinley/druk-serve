@@ -33,9 +33,10 @@
 
   // How the payment of a booking is shown to the provider
   function payLabel(b) {
-    if (b.paid && b.payMethod === "Cash") return `<span class="text-success"><i class="bi bi-cash me-1"></i>Cash received</span>`;
+    if (b.paid && b.payMethod === "Cash") return `<span class="text-success"><i class="bi bi-cash me-1"></i>Cash received (confirmed)</span>`;
     if (b.paid) return `<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Paid online (${DS.esc(b.payMethod)})</span>`;
-    if (b.status === "Completed") return `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Awaiting customer payment</span>`;
+    if (b.payMethod === "Cash") return `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Customer says paid in cash: please confirm</span>`;
+    if (b.status === "Completed") return `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Payment pending</span>`;
     if (b.status === "Cancelled") return `<span class="text-muted">-</span>`;
     return `<span class="text-muted"><i class="bi bi-clock me-1"></i>Customer pays after the job</span>`;
   }
@@ -76,6 +77,9 @@
       }
       if (b.status === "Confirmed") {
         buttons += `<button class="btn btn-sm btn-primary" data-action="complete" data-id="${b.id}"><i class="bi bi-check2-all me-1"></i>Mark as Completed</button>`;
+      }
+      if (b.status === "Completed" && b.payMethod === "Cash" && !b.paid) {
+        buttons += `<button class="btn btn-sm btn-primary" data-action="cashconfirm" data-id="${b.id}"><i class="bi bi-cash-coin me-1"></i>Confirm Cash Received</button>`;
       }
       return `<div class="card-ds mb-3">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
@@ -174,11 +178,23 @@
         ask("Decline this job?", "The customer will be told that you cannot take this job.", "Yes, decline", "btn-danger",
           () => setStatus(id, "Cancelled", "Job declined."));
       }
+      if (action === "cashconfirm") {
+        const b1 = bookings.find(x => x.id === id);
+        ask("Confirm cash received?",
+          "Only confirm if you really received " + DS.money(b1 ? b1.amount : 0) + " in cash from the customer. The payment will then show as Paid.",
+          "Yes, I received it", "btn-primary", async () => {
+            try {
+              await API.post("/payments/" + id + "/confirm-cash");          // POST /api/payments/:bookingId/confirm-cash
+              $("pageAlert").innerHTML = `<div class="alert alert-success py-2">Cash payment confirmed. The customer has been notified.</div>`;
+            } catch (err) {
+              $("pageAlert").innerHTML = `<div class="alert alert-danger py-2">${DS.esc(err.message)}</div>`;
+            }
+            await render();
+          });
+      }
       if (action === "complete") {
-        const b0 = bookings.find(x => x.id === id);
-        const text = b0 && b0.paid
-          ? "Mark this job as completed? The customer will be asked to rate your service."
-          : "Confirm the job is finished and you received " + DS.money(b0 ? b0.amount : 0) + " in cash. The customer will be asked to rate your service.";
+        const text = "Confirm the job is finished. The customer will be asked to pay and rate your service. " +
+          "Completing the job does not mark any payment as received: the payment stays Pending until it is paid.";
         ask("Mark job as completed?", text, "Yes, completed", "btn-primary",
           () => setStatus(id, "Completed", "Job marked as completed."));
       }
