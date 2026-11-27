@@ -3,12 +3,14 @@
    Each part below only runs if its page is open (it looks for a special id). */
 
 (async function () {
-  // Only customers may see these pages. Others are sent to the login page.
-  if (!DS.requireRole(["customer"])) return;
-
-  const user = DS.user();
+  const user = DS.user();                 // null when nobody is logged in (a visitor)
   const $ = id => document.getElementById(id);
   const params = new URLSearchParams(location.search);
+
+  // The customer HOME page is for logged-in customers only.
+  // The providers list and a provider's profile are OPEN to everyone: visitors can search and look
+  // without logging in. Login is only asked when they press "Book Now" (the booking page checks it).
+  if ($("welcome") && !DS.requireRole(["customer"])) return;
 
   const errorBox = message => `<div class="col-12"><div class="card-ds empty-state"><i class="bi bi-wifi-off"></i>
     ${DS.esc(message)}</div></div>`;
@@ -187,6 +189,7 @@
             <div class="text-muted small">Starting price</div>
             <div class="fs-3 fw-bold mb-3">Nu. ${p.rate}<small class="fs-6 text-muted fw-normal">/hour</small></div>
             ${bookBtn}
+            ${user ? "" : '<div class="small text-muted text-center mt-2">You will be asked to log in before booking.</div>'}
             <hr>
             <div class="small text-muted"><i class="bi bi-shield-check me-1"></i>Verified by Druk Serve admin</div>
             <div class="small text-muted"><i class="bi bi-credit-card me-1"></i>Pay online or cash on service</div>

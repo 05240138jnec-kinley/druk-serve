@@ -45,10 +45,24 @@ const DS = {
   requireRole(roles) {
     const u = this.user();
     if (!u || !localStorage.getItem("ds_token") || !roles.includes(u.role)) {
+      // Remember the page they wanted (for example the booking page), so login can bring them back to it.
+      try { sessionStorage.setItem("ds_next", JSON.stringify({ url: location.pathname + location.search, at: Date.now() })); } catch (e) { /* ignore */ }
       location.href = this.base + "login.html";
       return false;
     }
     return true;
+  },
+
+  // After a login: the customer page they wanted before logging in, or null (then the normal home page is used).
+  // Only an address on this website, only for customers, and only if it was saved in the last 30 minutes.
+  nextPage(user) {
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem("ds_next") || "null"); sessionStorage.removeItem("ds_next"); } catch (e) { return null; }
+    if (!saved || !user || user.role !== "customer") return null;
+    const url = String(saved.url || "");
+    if (Date.now() - Number(saved.at) > 30 * 60 * 1000) return null;
+    if (!/^\/(?!\/)/.test(url) || !url.includes("/customer/")) return null;
+    return url;
   },
 
   /* ---------- small helpers ---------- */
