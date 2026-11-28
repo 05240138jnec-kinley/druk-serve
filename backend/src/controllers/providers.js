@@ -17,15 +17,10 @@ async function listProviders(db, query = {}) {
   const where = ['p.is_verified = 1', 'p.is_available = 1', 'p.is_suspended = 0'];
   const params = [];
 
-  // Same keyword rule as the frontend: any word (first 4 letters) found in name, category, bio or location.
-  // So "leaking tap" still finds "Fixes leaks, installs taps".
-  const words = str(query.q).toLowerCase().split(/\s+/)
-    .map(w => w.replace(/[^a-z0-9]/g, '')).filter(w => w.length >= 3).map(w => w.slice(0, 4));
-  if (words.length) {
-    const one = '(LOWER(p.name) LIKE ? OR LOWER(s.name) LIKE ? OR LOWER(p.bio) LIKE ? OR LOWER(p.location) LIKE ?)';
-    where.push('(' + words.map(() => one).join(' OR ') + ')');
-    words.forEach(w => { const like = `%${w}%`; params.push(like, like, like, like); });
-  }
+  // Search-as-you-type on the provider's NAME: it must START with what was typed, in any letter case.
+  // "g" finds Gyeltshen but not Sangay, and "sonam t" finds Sonam Tobgay.
+  const typed = str(query.q).toLowerCase().replace(/[%_\\]/g, '').replace(/\s+/g, ' ').trim();
+  if (typed) { where.push('LOWER(p.name) LIKE ?'); params.push(`${typed}%`); }
   if (str(query.service))  { where.push('s.name = ?');          params.push(str(query.service)); }
   if (str(query.location)) { where.push('p.location = ?');      params.push(str(query.location)); }
   const maxPrice = toNumber(query.maxPrice);

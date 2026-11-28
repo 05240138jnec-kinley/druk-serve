@@ -116,7 +116,7 @@
       $("providerList").innerHTML = list.length
         ? list.map(p => DS.providerCard(p, "col-md-6 col-xl-4")).join("")
         : `<div class="col-12"><div class="card-ds empty-state"><i class="bi bi-search"></i>
-             No providers match your filters.<br>Try changing or resetting the filters.</div></div>`;
+             No providers found.<br>Try changing or resetting the filters.</div></div>`;
     }
 
     let timer;
