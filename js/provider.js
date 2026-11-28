@@ -107,7 +107,7 @@
       }
       const req = bookings.filter(b => b.status === "Pending").sort((a, b) => a.date.localeCompare(b.date));
       const conf = bookings.filter(b => b.status === "Confirmed").sort((a, b) => a.date.localeCompare(b.date));
-      const hist = bookings.filter(b => b.status === "Completed" || b.status === "Cancelled").sort((a, b) => b.date.localeCompare(a.date));
+      const hist = bookings.filter(b => b.status === "Completed" || b.status === "Cancelled").sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id - a.id);      
       $("tabReq").textContent = "Requests (" + req.length + ")";
       $("tabConf").textContent = "Confirmed (" + conf.length + ")";
       $("tabHist").textContent = "History (" + hist.length + ")";

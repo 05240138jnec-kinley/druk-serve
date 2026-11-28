@@ -301,7 +301,7 @@
         $("currentList").innerHTML = `<div class="card-ds empty-state"><i class="bi bi-wifi-off"></i>${DS.esc(err.message)}</div>`;
         return;
       }
-      const mine = bookings.slice().sort((a, b) => b.date.localeCompare(a.date));
+      const mine = bookings.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id - a.id);      
       const current = mine.filter(b => b.status === "Pending" || b.status === "Confirmed");
       const past = mine.filter(b => b.status === "Completed" || b.status === "Cancelled");
 

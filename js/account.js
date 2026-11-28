@@ -157,7 +157,13 @@
 
     function payText(b) {
       if (b.paid) return `<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Paid via ${DS.esc(b.payMethod || "Cash")}</span>` +
-        (b.txn ? `<br><small class="text-muted">Ref: ${DS.esc(b.txn)}</small>` : "");
+        (b.txn ? `<br><small class="text-muted">Ref: ${DS.esc(b.txn)}</small>` : "") +
+        (b.paidAt ? `<br><small class="text-muted">${isCustomer ? "Paid" : "Received"} on ${stamp(b.paidAt.date, b.paidAt.time)}</small>` : "");
+      if (b.payMethod === "Cash" && b.status === "Completed") {
+        return isCustomer
+          ? `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Cash paid: waiting for the provider to confirm</span>`
+          : `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Customer says paid in cash: please confirm</span>`;
+      }
       if (b.status === "Cancelled") return `<span class="text-muted">-</span>`;
       if (b.status === "Completed") return `<span class="text-warning"><i class="bi bi-hourglass-split me-1"></i>Payment due</span>`;
       return `<span class="text-muted"><i class="bi bi-clock me-1"></i>Pay after the job</span>`;
@@ -225,6 +231,10 @@
           buttons.push(`<button class="btn btn-primary" data-act="Confirmed"><i class="bi bi-check-lg me-1"></i>Accept</button>`);
           buttons.push(`<button class="btn btn-outline-danger" data-act="Cancelled"><i class="bi bi-x-lg me-1"></i>Decline</button>`);
         }
+        // Cash the customer says they paid: the provider confirms it here (it then becomes Paid)
+        if (b && b.status === "Completed" && b.payMethod === "Cash" && !b.paid) {
+          buttons.push(`<button class="btn btn-primary" data-cash="${b.id}"><i class="bi bi-cash-coin me-1"></i>Confirm Cash Received</button>`);
+        }
         const page = NOTIF_PAGE.provider[n.title];
         const label = { "dashboard.html": "Open Dashboard", "earnings.html": "View Earnings", "feedback.html": "Reply to Reviews", "services.html": "My Services" }[page];
         if (page) buttons.push(link(page, "bi-box-arrow-up-right", label, "btn-outline-primary"));
@@ -269,6 +279,22 @@
 
     // Provider: Accept or Decline a new request right from here
     $("notifDetail").addEventListener("click", async e => {
+      const cashBtn = e.target.closest("[data-cash]");
+      if (cashBtn) {
+        if (!confirm("Only confirm if you really received " + DS.money(n.related.booking.amount) + " in cash from the customer.")) return;
+        cashBtn.disabled = true;                                        // one tap only: no double confirmation
+        try {
+          await API.post("/payments/" + cashBtn.dataset.cash + "/confirm-cash");   // POST /api/payments/:bookingId/confirm-cash
+          n = await API.get("/notifications/" + id);
+          show(n);
+          $("detailAlert").innerHTML = `<div class="alert alert-success py-2">Cash payment confirmed. The customer has been notified.</div>`;
+        } catch (err) {
+          n = await API.get("/notifications/" + id).catch(() => n);     // show the real state, e.g. already confirmed
+          show(n);
+          $("detailAlert").innerHTML = `<div class="alert alert-danger py-2">${DS.esc(err.message)}</div>`;
+        }
+        return;
+      }
       const btn = e.target.closest("[data-act]");
       if (!btn || !n.related || !n.related.booking) return;
       btn.disabled = true;

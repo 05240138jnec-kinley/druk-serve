@@ -51,7 +51,7 @@ async function list(db, actor, query = {}) {
   }
 
   const rows = await db.all(
-    `${BOOKING_SELECT}${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY b.booking_date DESC, b.booking_id DESC`, params);
+    `${BOOKING_SELECT}${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY b.created_at DESC, b.booking_id DESC`, params);
   return rows.map(toBooking);
 }
 

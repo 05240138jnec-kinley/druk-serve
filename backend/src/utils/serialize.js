@@ -52,6 +52,7 @@ function toBooking(r) {
     payMethod: online ? r.pay_method : '',
     paid: r.pay_status === 'Paid',
     txn: r.pay_ref || null,
+    paidAt: r.pay_status === 'Paid' && r.pay_date ? toBhutanParts(r.pay_date) : null,   // when the payment was received (Bhutan time)
     customerName: r.customer_name,
     customerPhone: r.customer_phone,
     providerName: r.provider_name,

@@ -27,7 +27,7 @@ const BOOKING_SELECT = `
          s.name AS service_name,
          c.name AS customer_name, c.phone_number AS customer_phone,
          p.name AS provider_name, p.phone_number AS provider_phone,
-         pay.method AS pay_method, pay.status AS pay_status, pay.transaction_ref AS pay_ref,
+         pay.method AS pay_method, pay.status AS pay_status, pay.transaction_ref AS pay_ref, pay.payment_date AS pay_date,
          fb.rating AS fb_rating
   FROM bookings b
   JOIN services s          ON s.service_id  = b.service_id

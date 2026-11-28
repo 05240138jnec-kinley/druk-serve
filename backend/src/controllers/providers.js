@@ -5,7 +5,7 @@
 
 const { PROVIDER_SELECT, REVIEW_SELECT } = require('../db/queries');
 const { toProvider, toFeedback } = require('../utils/serialize');
-const { todayISO, isValidTime } = require('../utils/dates');
+const { todayISO, isValidTime, toBhutanParts } = require('../utils/dates');
 const { str, toInt, toNumber, Validator } = require('../utils/validate');
 const { notFound } = require('../utils/errors');
 const { MIN_RATE, MAX_RATE, MAX_EXPERIENCE } = require('../constants');
@@ -106,19 +106,20 @@ async function updateServices(db, actor, input = {}) {
 async function earnings(db, actor) {
   const rows = await db.all(
     `SELECT b.booking_id, b.booking_date, b.total_amount, c.name AS customer_name, s.name AS service_name,
-            pay.method AS pay_method, pay.status AS pay_status, pay.transaction_ref AS pay_ref
+            pay.method AS pay_method, pay.status AS pay_status, pay.transaction_ref AS pay_ref, pay.payment_date AS pay_date, pay.payment_id
        FROM bookings b
        JOIN customers c ON c.customer_id = b.customer_id
        JOIN services s  ON s.service_id  = b.service_id
        LEFT JOIN payments pay ON pay.booking_id = b.booking_id
       WHERE b.provider_id = ? AND b.status = 'Completed'
-      ORDER BY b.booking_date DESC, b.booking_id DESC`, [actor.id]);
+      ORDER BY pay.payment_date DESC, pay.payment_id DESC, b.booking_id DESC`, [actor.id]);   // newest payment first
 
   const paidRows = rows.filter(r => r.pay_status === 'Paid');
   const waitingRows = rows.filter(r => r.pay_status !== 'Paid');
   const payments = paidRows.map(r => ({
     bookingId: r.booking_id,
-    date: String(r.booking_date).slice(0, 10),
+    date: toBhutanParts(r.pay_date).date,          // the day the payment was received, not the day of the job
+    time: toBhutanParts(r.pay_date).time,
     customerName: r.customer_name,
     service: r.service_name,
     method: r.pay_method || 'Cash',
