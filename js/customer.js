@@ -20,27 +20,34 @@
     $("welcome").innerHTML = DS.avatar(user, "me-2", "width:44px;height:44px;font-size:1rem;display:inline-grid;vertical-align:middle") +
       " Welcome, " + DS.esc(user.name.split(" ")[0]);
 
-    // Service tiles + search dropdown  (GET /api/categories)
-    try {
-      const services = await API.get("/categories");
-      $("serviceGrid").innerHTML = services.map(s => `
+    // Service tiles + the search dropdown  (GET /api/categories)
+    // All services show by default; choosing one in the dropdown (or pressing Search) shows only that card.
+    // A card opens the page with the available providers for that service (../service.html?name=Plumbing).
+    let services = [];
+    const showServices = () => {
+      const chosen = $("searchService").value;
+      const shown = chosen ? services.filter(s => s.name === chosen) : services;
+      $("serviceGrid").innerHTML = shown.length ? shown.map(s => `
         <div class="col-6 col-md-4 col-lg-3">
-          <a class="service-card" href="providers.html?service=${encodeURIComponent(s.name)}">
-            <span class="icon-circle"><i class="bi ${s.icon}"></i></span>
+          <a class="service-card" href="../service.html?name=${encodeURIComponent(s.name)}">
+            <span class="icon-circle"><i class="bi ${DS.esc(s.icon)}"></i></span>
             <h3>${DS.esc(s.name)}</h3><p>${DS.esc(s.desc)}</p>
           </a>
-        </div>`).join("");
+        </div>`).join("") : errorBox("No service found.");
+    };
+    try {
+      services = await API.get("/categories");
       services.forEach(s => $("searchService").insertAdjacentHTML("beforeend", `<option>${DS.esc(s.name)}</option>`));
+      showServices();
     } catch (err) {
       $("serviceGrid").innerHTML = errorBox(err.message);
     }
 
+    $("searchService").addEventListener("change", showServices);
     $("searchForm").addEventListener("submit", e => {
       e.preventDefault();
-      const p = new URLSearchParams();
-      if ($("searchText").value.trim()) p.set("q", $("searchText").value.trim());
-      if ($("searchService").value) p.set("service", $("searchService").value);
-      location.href = "providers.html?" + p.toString();
+      showServices();
+      $("serviceGrid").scrollIntoView({ behavior: "smooth" });
     });
 
     // Upcoming bookings (Pending or Confirmed)  (GET /api/bookings)
